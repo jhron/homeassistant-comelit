@@ -13,9 +13,7 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     STATE_OFF,
     STATE_IDLE,
-    STATE_ON
-)
-from homeassistant.components.sensor import (
+    STATE_ON,
     UnitOfTemperature,
 )
 
@@ -41,10 +39,10 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
     def hvac_mode(self):
         if self._state['status']:
             if self._state['is_winter_season']:
-                return HVACMode.HEAT 
+                return HVACMode.HEAT
             else:
-                return HVACMode.COOL 
-        else: 
+                return HVACMode.COOL
+        else:
             return HVACMode.OFF
 
     @property
@@ -91,7 +89,7 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
     def set_hvac_mode(self, hvac_mode):
         self._hub.climate_set_state(self._id, hvac_mode)
         self.schedule_update_ha_state()
-        
+
     def update(self):
         pass
 
