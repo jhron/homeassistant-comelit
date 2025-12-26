@@ -1,88 +1,102 @@
 """Comelit SimpleHome/Vedo integration."""
+from __future__ import annotations
 
 import logging
-import voluptuous as vol
-from homeassistant.helpers.discovery import load_platform
-import homeassistant.helpers.config_validation as cv
-from homeassistant.const import (CONF_HOST, CONF_USERNAME, CONF_PASSWORD, CONF_PORT, CONF_SCAN_INTERVAL,
-                                 CONF_BINARY_SENSORS)
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+)
+from homeassistant.core import HomeAssistant
+
+from .const import (
+    DOMAIN,
+    CONF_DEVICE_TYPE,
+    CONF_MQTT_USER,
+    CONF_MQTT_PASSWORD,
+    CONF_SERIAL,
+    CONF_CLIENT,
+    DEVICE_TYPE_HUB,
+    DEVICE_TYPE_VEDO,
+    PLATFORMS_HUB,
+    PLATFORMS_VEDO,
+)
 from .hub import ComelitHub
 from .vedo import ComelitVedo
-from .const import DOMAIN, CONF_MQTT_USER, CONF_MQTT_PASSWORD, CONF_SERIAL, CONF_CLIENT
+
 _LOGGER = logging.getLogger(__name__)
 
-
-HUB_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Optional(CONF_PORT, default=1883): cv.port,
-        vol.Optional(CONF_MQTT_USER, default="hsrv-user"): cv.string,
-        vol.Optional(CONF_MQTT_PASSWORD, default="sf1nE9bjPc"): cv.string,
-        vol.Required(CONF_SERIAL): cv.string,
-        vol.Required(CONF_USERNAME): cv.string,
-        vol.Required(CONF_PASSWORD): cv.string,
-        vol.Optional(CONF_CLIENT, default="homeassistant"): cv.string,
-        vol.Optional(CONF_SCAN_INTERVAL, default=1): cv.positive_int
-    }
-)
-
-VEDO_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Optional(CONF_PORT, default=80): cv.port,
-        vol.Required(CONF_PASSWORD): cv.string,
-        vol.Optional(CONF_SCAN_INTERVAL, default=1): cv.positive_int,
-        vol.Optional(CONF_BINARY_SENSORS, default=False): cv.boolean
-    }
-)
+type ComelitConfigEntry = ConfigEntry[ComelitHub | ComelitVedo]
 
 
-def setup(hass, config):
-    conf = config[DOMAIN]
-    hass.data[DOMAIN] = {}
-    hass.data[DOMAIN]['conf'] = conf
+async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> bool:
+    """Set up Comelit from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
 
-    # Comelit SimpleHome Hub
-    if 'hub' in conf:
-        hub_conf = conf["hub"]
-        if hub_conf is not None:
-            schema = HUB_SCHEMA(hub_conf)
-            hub_host = schema[CONF_HOST]
-            mqtt_port = schema[CONF_PORT]
-            mqtt_user = schema[CONF_MQTT_USER]
-            mqtt_password = schema[CONF_MQTT_PASSWORD]
-            hub_user = schema[CONF_USERNAME]
-            scan_interval = schema[CONF_SCAN_INTERVAL]
-            hub_password = schema[CONF_PASSWORD]
-            hub_serial = schema[CONF_SERIAL]
-            hub_client = schema[CONF_CLIENT]
-            hub = ComelitHub(hub_client, hub_serial, hub_host, mqtt_port, mqtt_user, mqtt_password, hub_user,
-                             hub_password, scan_interval)
-            hass.data[DOMAIN]['hub'] = hub
-            load_platform(hass,'sensor', DOMAIN, {}, config)
-            load_platform(hass,'light', DOMAIN, {}, config)
-            load_platform(hass,'cover', DOMAIN, {}, config)
-            load_platform(hass,'scene', DOMAIN, {}, config)
-            load_platform(hass,'switch', DOMAIN, {}, config)
-            load_platform(hass,'climate', DOMAIN, {}, config)
-            hub.start()
-            _LOGGER.info("Comelit SimpleHome integration started")
+    device_type = entry.data[CONF_DEVICE_TYPE]
 
-    # Comelit Vedo
-    if 'vedo' in conf:
-        vedo_conf = conf["vedo"]
-        if vedo_conf is not None:
-            schema = VEDO_SCHEMA(vedo_conf)
-            vedo_host = schema[CONF_HOST]
-            vedo_port = schema[CONF_PORT]
-            vedo_pwd = schema[CONF_PASSWORD]
-            scan_interval = schema[CONF_SCAN_INTERVAL]
-            expose_bin_sensors = schema[CONF_BINARY_SENSORS]
-            vedo = ComelitVedo(vedo_host, vedo_port, vedo_pwd, scan_interval, expose_bin_sensors)
-            hass.data[DOMAIN]['vedo'] = vedo
-            load_platform(hass,'binary_sensor', DOMAIN, {}, config)
-            load_platform(hass,'alarm_control_panel', DOMAIN, {}, config)
-            vedo.start()
-            _LOGGER.info("Comelit Vedo integration started")
+    if device_type == DEVICE_TYPE_HUB:
+        hub = ComelitHub(
+            hass=hass,
+            client_name=entry.data[CONF_CLIENT],
+            hub_serial=entry.data[CONF_SERIAL],
+            hub_host=entry.data[CONF_HOST],
+            mqtt_port=entry.data[CONF_PORT],
+            mqtt_user=entry.data[CONF_MQTT_USER],
+            mqtt_password=entry.data[CONF_MQTT_PASSWORD],
+            hub_user=entry.data[CONF_USERNAME],
+            hub_password=entry.data[CONF_PASSWORD],
+            scan_interval=entry.data[CONF_SCAN_INTERVAL],
+        )
+
+        if not await hub.async_connect():
+            return False
+
+        hass.data[DOMAIN][entry.entry_id] = hub
+        entry.runtime_data = hub
+
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_HUB)
+        _LOGGER.info("Comelit SimpleHome Hub integration started")
+
+    elif device_type == DEVICE_TYPE_VEDO:
+        vedo = ComelitVedo(
+            hass=hass,
+            host=entry.data[CONF_HOST],
+            port=entry.data[CONF_PORT],
+            password=entry.data[CONF_PASSWORD],
+            scan_interval=entry.data[CONF_SCAN_INTERVAL],
+        )
+
+        if not await vedo.async_connect():
+            return False
+
+        hass.data[DOMAIN][entry.entry_id] = vedo
+        entry.runtime_data = vedo
+
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_VEDO)
+        _LOGGER.info("Comelit Vedo integration started")
 
     return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> bool:
+    """Unload a config entry."""
+    device_type = entry.data[CONF_DEVICE_TYPE]
+
+    if device_type == DEVICE_TYPE_HUB:
+        platforms = PLATFORMS_HUB
+    else:
+        platforms = PLATFORMS_VEDO
+
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, platforms)
+
+    if unload_ok:
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await coordinator.async_disconnect()
+
+    return unload_ok
+

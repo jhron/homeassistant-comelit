@@ -1,7 +1,13 @@
-"""Platform for sensor integration."""
+"""Platform for scene integration."""
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 from homeassistant.components.scene import Scene
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .comelit_device import ComelitDevice
@@ -9,18 +15,25 @@ from .comelit_device import ComelitDevice
 _LOGGER = logging.getLogger(__name__)
 
 
-def setup_platform(hass, config, add_entities, discovery_info=None):
-    hass.data[DOMAIN]['hub'].scene_add_entities = add_entities
-    _LOGGER.info("Comelit Scenario Integration started")
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Comelit scenes."""
+    hub = hass.data[DOMAIN][entry.entry_id]
+    hub.scene_add_entities = async_add_entities
+    _LOGGER.info("Comelit Scene Integration started")
 
 
 class ComelitScenario(ComelitDevice, Scene):
+    """Representation of a Comelit scenario."""
 
-    def __init__(self, id, description, scenario_hub):
-        self._scenario = scenario_hub
+    def __init__(self, id: str, description: str, hub) -> None:
+        """Initialize the scenario."""
+        self._hub = hub
         ComelitDevice.__init__(self, id, None, description)
 
-    def activate(self):
-        self._scenario.activate(self._id)
-
-
+    async def async_activate(self, **kwargs: Any) -> None:
+        """Activate the scenario."""
+        await self._hub.async_activate_scenario(self._id)

@@ -1,49 +1,60 @@
+"""Base class for Comelit devices."""
+from __future__ import annotations
+
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
 
 
 class ComelitDevice(Entity):
-    def __init__(self, id, device_type, name):
+    """Base class for Comelit devices."""
+
+    def __init__(self, id: str, device_type: str | None, name: str) -> None:
         """Initialize the Comelit device."""
         self._is_available = True
         self._device_type = device_type
         self._id = id
         self._state = None
-        if device_type is None:
-            self._name = self.entity_name = "{0}_{1}".format(DOMAIN, name.lower().replace(' ', '-'))
-            self._unique_id = "{0}_{1}".format(DOMAIN, id)
-        else:
-            self._name = self.entity_name = "{0}_{1}_{2}".format(DOMAIN, device_type, name.lower().replace(' ', '-'))
-            self._unique_id = "{0}_{1}_{2}".format(DOMAIN, device_type, id)
 
+        # Build entity name and unique_id
+        name_slug = name.lower().replace(" ", "-")
+        if device_type is None:
+            self._name = self.entity_name = f"{DOMAIN}_{name_slug}"
+            self._unique_id = f"{DOMAIN}_{id}"
+        else:
+            self._name = self.entity_name = f"{DOMAIN}_{device_type}_{name_slug}"
+            self._unique_id = f"{DOMAIN}_{device_type}_{id}"
+
+        self._attr_has_entity_name = False
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Return the name of the device."""
         return self._name
 
     @property
-    def unique_id(self):
+    def unique_id(self) -> str:
         """Return a unique ID."""
         return self._unique_id
 
     @property
-    def available(self):
+    def available(self) -> bool:
         """Return True if entity is available."""
         return self._is_available
 
-    def update_state(self, state):
-        #TODO optiluca: make this more general and use it for all derived classes
+    def update_state(self, state) -> None:
+        """Update the device state."""
         old = self._state
         self._state = state
         if old != state:
-            self.schedule_update_ha_state()
+            self.async_write_ha_state()
 
     @property
     def state(self):
+        """Return the state of the device."""
         return self._state
 
     @property
-    def should_poll(self):
+    def should_poll(self) -> bool:
+        """Return False as updates are pushed."""
         return False

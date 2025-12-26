@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Comelit Integration",
+        "description": "Select the device type to configure.",
+        "data": {
+          "device_type": "Device Type"
+        }
+      },
+      "hub": {
+        "title": "Configure Comelit SimpleHome Hub",
+        "description": "Enter the connection details for your Comelit Hub.",
+        "data": {
+          "host": "MQTT Broker Host",
+          "port": "MQTT Port",
+          "mqtt_user": "MQTT Username",
+          "mqtt_password": "MQTT Password",
+          "serial": "Hub Serial Number",
+          "username": "Hub Username",
+          "password": "Hub Password",
+          "client": "MQTT Client ID",
+          "scan_interval": "Scan Interval (seconds)"
+        }
+      },
+      "vedo": {
+        "title": "Configure Comelit Vedo Alarm",
+        "description": "Enter the connection details for your Comelit Vedo.",
+        "data": {
+          "host": "Vedo Host",
+          "port": "Vedo Port",
+          "password": "Vedo Password",
+          "scan_interval": "Scan Interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  }
+}
