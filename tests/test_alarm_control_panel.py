@@ -1,46 +1,62 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest import mock
+from homeassistant.components.alarm_control_panel import (
+    AlarmControlPanelEntityFeature,
+    AlarmControlPanelState,
+)
 
-from homeassistant.components.alarm_control_panel import AlarmControlPanelEntityFeature
-
-from custom_components.comelit import DOMAIN
-from custom_components.comelit.alarm_control_panel import setup_platform, VedoAlarm
-
-
-@pytest.fixture
-def test_setup_platform(hass, config, caplog):
-    add_entities = mock.MagicMock()
-    setup_platform(hass, config, add_entities, None)
-    assert hass.data[DOMAIN]['vedo'].alarm_add_entities is add_entities
-    assert "Comelit Vedo Alarm Integration started" in caplog.text
+from custom_components.comelit.alarm_control_panel import VedoAlarm, async_setup_entry
+from custom_components.comelit.const import DOMAIN
 
 
-class TestVedoAlarm:
-    @pytest.fixture
-    def vedo_alarm(self):
-        vedo_mock = mock.MagicMock()
-        vedo_mock.disarm = mock.MagicMock()
-        vedo_mock.arm = mock.MagicMock()
-        return VedoAlarm('1', 'Vedo Alarm', 'armed', vedo_mock)
+@pytest.mark.asyncio
+async def test_async_setup_entry_registers_alarm_callback() -> None:
+    hass = MagicMock()
+    hass.data = {DOMAIN: {"entry-id": MagicMock()}}
+    entry = SimpleNamespace(entry_id="entry-id")
+    add_entities = MagicMock()
 
-    def test_alarm_disarm(self, vedo_alarm):
-        vedo_alarm.alarm_disarm()
-        vedo_alarm._vedo.disarm.assert_called_once_with('1')
+    await async_setup_entry(hass, entry, add_entities)
 
-    def test_alarm_arm_away(self, vedo_alarm):
-        vedo_alarm.alarm_arm_away()
-        vedo_alarm._vedo.arm.assert_called_once_with('1')
+    assert hass.data[DOMAIN]["entry-id"].alarm_add_entities is add_entities
 
-    def test_alarm_arm_night(self, vedo_alarm):
-        vedo_alarm.alarm_arm_night()
-        vedo_alarm._vedo.arm_night.assert_called_once_with('1')
 
-    def test_alarm_arm_home_errors(self, vedo_alarm):
-        with pytest.raises(NotImplementedError):
-            vedo_alarm.alarm_arm_home()
+@pytest.mark.asyncio
+async def test_vedo_alarm_async_methods_delegate_to_vedo_runtime() -> None:
+    vedo = MagicMock()
+    vedo.async_disarm = AsyncMock()
+    vedo.async_arm = AsyncMock()
+    vedo.async_arm_night = AsyncMock()
+    alarm = VedoAlarm(1, "Area 1", AlarmControlPanelState.ARMED_AWAY, vedo)
 
-    def test_supported_features(self, vedo_alarm):
-        assert vedo_alarm.supported_features == AlarmControlPanelEntityFeature.ARM_AWAY | AlarmControlPanelEntityFeature.ARM_NIGHT
+    await alarm.async_alarm_disarm()
+    await alarm.async_alarm_arm_away()
+    await alarm.async_alarm_arm_night()
 
-    def test_code_arm_required(self, vedo_alarm):
-        assert vedo_alarm.code_arm_required is False
+    vedo.async_disarm.assert_awaited_once_with(1)
+    vedo.async_arm.assert_awaited_once_with(1)
+    vedo.async_arm_night.assert_awaited_once_with(1)
+
+
+def test_vedo_alarm_properties_expose_supported_state() -> None:
+    alarm = VedoAlarm(1, "Area 1", AlarmControlPanelState.ARMED_AWAY, MagicMock())
+
+    assert alarm.alarm_state is AlarmControlPanelState.ARMED_AWAY
+    assert (
+        alarm.supported_features
+        == AlarmControlPanelEntityFeature.ARM_AWAY
+        | AlarmControlPanelEntityFeature.ARM_NIGHT
+    )
+    assert alarm.code_arm_required is False
+
+
+@pytest.mark.asyncio
+async def test_vedo_alarm_arm_home_is_not_supported() -> None:
+    alarm = VedoAlarm(1, "Area 1", AlarmControlPanelState.DISARMED, MagicMock())
+
+    with pytest.raises(NotImplementedError):
+        await alarm.async_alarm_arm_home()

@@ -1,65 +1,141 @@
-import unittest
-from unittest.mock import patch, Mock
-from homeassistant.const import (CONF_HOST, CONF_USERNAME, CONF_PASSWORD, CONF_PORT, CONF_SCAN_INTERVAL,
-                                 CONF_BINARY_SENSORS)
-from custom_components.comelit import setup, CONF_SERIAL
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from custom_components.comelit import async_setup_entry, async_unload_entry
+from custom_components.comelit.const import (
+    CONF_CLIENT,
+    CONF_DEVICE_TYPE,
+    CONF_MQTT_PASSWORD,
+    CONF_MQTT_USER,
+    CONF_SERIAL,
+    DEVICE_TYPE_HUB,
+    DEVICE_TYPE_VEDO,
+    DOMAIN,
+    PLATFORMS_HUB,
+    PLATFORMS_VEDO,
+)
 
 
-class TestInit(unittest.TestCase):
+def _mock_hass() -> MagicMock:
+    hass = MagicMock()
+    hass.data = {}
+    hass.config_entries.async_forward_entry_setups = AsyncMock()
+    hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
+    return hass
 
-    @patch("custom_components.comelit.ComelitHub")
-    @patch("homeassistant.helpers.discovery.load_platform")
-    def test_hub(self, mock_discovery, mock_ComelitHub):
-        hub_port = 1883
-        hub_address = 'localhost'
-        hub_user = 'user'
-        hub_pwd = 'pwd'
-        hub_serial = '00000'
-        hub_client = 'homeassistant'
-        mqtt_user = 'hsrv-user'
-        mqtt_pwd = 'sf1nE9bjPc'
-        scan_interval = 30
 
-        hass = Mock()
-        hass.data = {}
-        conf = {
-            "hub": {
-                CONF_HOST: hub_address, CONF_USERNAME: hub_user, CONF_PASSWORD: hub_pwd,
-                CONF_PORT: hub_port, CONF_SCAN_INTERVAL: scan_interval, CONF_SERIAL: hub_serial
-            }
-        }
-        config = {"comelit": conf}
+def _mock_hub_entry() -> SimpleNamespace:
+    return SimpleNamespace(
+        entry_id="hub-entry",
+        data={
+            CONF_DEVICE_TYPE: DEVICE_TYPE_HUB,
+            "host": "127.0.0.1",
+            "port": 1883,
+            CONF_MQTT_USER: "hsrv-user",
+            CONF_MQTT_PASSWORD: "pwd",
+            "username": "user",
+            "password": "hub-password",
+            CONF_SERIAL: "00000000",
+            CONF_CLIENT: "homeassistant",
+            "scan_interval": 30,
+        },
+        options={},
+        runtime_data=None,
+        add_update_listener=MagicMock(return_value=lambda: None),
+        async_on_unload=MagicMock(),
+    )
 
-        setup(hass, config)
 
-        self.assertTrue(hass.data["comelit"]['hub'])
+def _mock_vedo_entry() -> SimpleNamespace:
+    return SimpleNamespace(
+        entry_id="vedo-entry",
+        data={
+            CONF_DEVICE_TYPE: DEVICE_TYPE_VEDO,
+            "host": "127.0.0.1",
+            "port": 80,
+            "password": "123456",
+            "scan_interval": 30,
+        },
+        options={},
+        runtime_data=None,
+        add_update_listener=MagicMock(return_value=lambda: None),
+        async_on_unload=MagicMock(),
+    )
 
-        # assert Comelit Hub got the correct arguments
-        mock_ComelitHub.assert_called_with(hub_client, hub_serial, hub_address, hub_port, mqtt_user, mqtt_pwd,
-                                           hub_user, hub_pwd, scan_interval)
 
-    @patch("custom_components.comelit.ComelitVedo")
-    @patch("homeassistant.helpers.discovery.load_platform")
-    def test_vedo(self, mock_discovery, mock_ComelitVedo):
-        vedo_host = "localhost"
-        vedo_pwd = "123456"
-        vedo_port = 80
-        scan_interval = 30
-        expose_bin_sensors = True
-        hass = Mock()
-        hass.data = {}
-        conf = {
-            "vedo": {
-                CONF_HOST: vedo_host, CONF_PASSWORD: vedo_pwd,
-                CONF_PORT: vedo_port, CONF_SCAN_INTERVAL: scan_interval,
-                CONF_BINARY_SENSORS: expose_bin_sensors
-            }
-        }
-        config = {"comelit": conf}
+@pytest.mark.asyncio
+async def test_async_setup_entry_hub_success_sets_runtime_data() -> None:
+    hass = _mock_hass()
+    entry = _mock_hub_entry()
 
-        setup(hass, config)
+    with patch("custom_components.comelit.ComelitHub") as mock_hub_cls:
+        mock_hub = mock_hub_cls.return_value
+        mock_hub.async_connect = AsyncMock()
 
-        self.assertTrue(hass.data["comelit"]['vedo'])
+        assert await async_setup_entry(hass, entry) is True
 
-        # assert Comelit Vedo got the correct arguments
-        mock_ComelitVedo.assert_called_with(vedo_host, vedo_port, vedo_pwd, scan_interval, expose_bin_sensors)
+    assert hass.data[DOMAIN][entry.entry_id] is mock_hub
+    assert entry.runtime_data is mock_hub
+    hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
+        entry, PLATFORMS_HUB
+    )
+    entry.add_update_listener.assert_called_once()
+    entry.async_on_unload.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_vedo_success_sets_runtime_data() -> None:
+    hass = _mock_hass()
+    entry = _mock_vedo_entry()
+
+    with patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls:
+        mock_vedo = mock_vedo_cls.return_value
+        mock_vedo.async_connect = AsyncMock()
+
+        assert await async_setup_entry(hass, entry) is True
+
+    assert hass.data[DOMAIN][entry.entry_id] is mock_vedo
+    assert entry.runtime_data is mock_vedo
+    hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
+        entry, PLATFORMS_VEDO
+    )
+    entry.add_update_listener.assert_called_once()
+    entry.async_on_unload.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_unload_entry_hub_disconnects_runtime_data() -> None:
+    hass = _mock_hass()
+    entry = _mock_hub_entry()
+    runtime = MagicMock()
+    runtime.async_disconnect = AsyncMock()
+    hass.data[DOMAIN] = {entry.entry_id: runtime}
+
+    assert await async_unload_entry(hass, entry) is True
+
+    hass.config_entries.async_unload_platforms.assert_awaited_once_with(
+        entry, PLATFORMS_HUB
+    )
+    runtime.async_disconnect.assert_awaited_once()
+    assert entry.entry_id not in hass.data[DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_async_unload_entry_vedo_disconnects_runtime_data() -> None:
+    hass = _mock_hass()
+    entry = _mock_vedo_entry()
+    runtime = MagicMock()
+    runtime.async_disconnect = AsyncMock()
+    hass.data[DOMAIN] = {entry.entry_id: runtime}
+
+    assert await async_unload_entry(hass, entry) is True
+
+    hass.config_entries.async_unload_platforms.assert_awaited_once_with(
+        entry, PLATFORMS_VEDO
+    )
+    runtime.async_disconnect.assert_awaited_once()
+    assert entry.entry_id not in hass.data[DOMAIN]

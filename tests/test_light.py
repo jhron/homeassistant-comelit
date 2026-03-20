@@ -1,42 +1,47 @@
-import pytest
-from unittest.mock import Mock
+from __future__ import annotations
 
-from homeassistant.components.light import ColorMode, ATTR_BRIGHTNESS
-from homeassistant.const import STATE_ON, STATE_OFF
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode
+from homeassistant.const import STATE_OFF, STATE_ON
 
 from custom_components.comelit.light import ComelitLight
 
 
-@pytest.fixture
-def comelit_light():
-    light_hub = Mock()
-    light = ComelitLight("id", "description", STATE_ON, 255, light_hub)
-    light.schedule_update_ha_state = lambda *args, **kwargs: None
-    return light
+def _make_light(brightness: int | None = 255) -> tuple[ComelitLight, MagicMock]:
+    hub = MagicMock()
+    hub.async_light_on = AsyncMock()
+    hub.async_light_off = AsyncMock()
+    light = ComelitLight("light-id", "Kitchen", STATE_ON, brightness, hub)
+    light.async_write_ha_state = MagicMock()
+    return light, hub
 
 
-def test_light_is_on(comelit_light):
-    assert comelit_light.is_on
+def test_light_uses_onoff_mode_when_not_dimmable() -> None:
+    light, _ = _make_light(None)
+
+    assert light.supported_color_modes == {ColorMode.ONOFF}
+    assert light.color_mode is ColorMode.ONOFF
 
 
-def test_light_supported_color_modes(comelit_light):
-    assert comelit_light.supported_color_modes == {ColorMode.BRIGHTNESS}
+@pytest.mark.asyncio
+async def test_async_turn_on_updates_state_and_calls_hub() -> None:
+    light, hub = _make_light(255)
+
+    await light.async_turn_on(**{ATTR_BRIGHTNESS: 128})
+
+    hub.async_light_on.assert_awaited_once_with("light-id", 128)
+    assert light.is_on is True
+    assert light.brightness == 128
 
 
-def test_light_color_mode(comelit_light):
-    assert comelit_light.color_mode == ColorMode.BRIGHTNESS
+@pytest.mark.asyncio
+async def test_async_turn_off_updates_state_and_calls_hub() -> None:
+    light, hub = _make_light(255)
 
+    await light.async_turn_off()
 
-def test_light_brightness(comelit_light):
-    assert comelit_light.brightness == 255
-
-
-def test_light_turn_on(comelit_light):
-    comelit_light.turn_on(**{ATTR_BRIGHTNESS: 128})
-    assert comelit_light._state == STATE_ON
-    assert comelit_light._brightness == 128
-
-
-def test_light_turn_off(comelit_light):
-    comelit_light.turn_off()
-    assert comelit_light._state == STATE_OFF
+    hub.async_light_off.assert_awaited_once_with("light-id")
+    assert light.is_on is False
+    assert light._state == STATE_OFF
