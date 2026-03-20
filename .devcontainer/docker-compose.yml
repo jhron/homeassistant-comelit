@@ -1,5 +1,3 @@
-version: '2.4'
-
 services:
   homeassistant:
     image: homeassistant/home-assistant:latest
@@ -10,5 +8,13 @@ services:
       - "8123:8123"
       - "5678:5678"
     volumes:
+      - ./config:/config
       - ../custom_components/comelit:/config/custom_components/comelit
-      - ./configuration.yaml:/config/configuration.yaml
+  pytest:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.pytest
+    container_name: comelit-pytest
+    working_dir: /workspaces/homeassistant-comelit
+    volumes:
+      - ..:/workspaces/homeassistant-comelit

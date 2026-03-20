@@ -1,0 +1,25 @@
+FROM python:3.13-bookworm
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ffmpeg \
+        git \
+        libffi-dev \
+        libjpeg62-turbo-dev \
+        libssl-dev \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspaces/homeassistant-comelit
+
+COPY requirements.txt requirements-dev.txt ./
+
+RUN python -m pip install --upgrade pip \
+    && python -m pip install -r requirements-dev.txt
+
+CMD ["pytest", "-q"]

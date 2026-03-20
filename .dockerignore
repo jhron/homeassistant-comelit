@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+.pydeps
+.tmp
+.venv
+__pycache__
+.coverage
+.devcontainer/config
