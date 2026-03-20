@@ -26,7 +26,7 @@ async def async_setup_entry(
     """Set up Comelit Vedo binary sensors."""
     vedo = hass.data[DOMAIN][entry.entry_id]
     vedo.binary_sensor_add_entities = async_add_entities
-    _LOGGER.info("Comelit Vedo Binary Sensor Integration started")
+    _LOGGER.debug("Comelit Vedo Binary Sensor Integration started")
 
 
 class VedoSensor(ComelitDevice, BinarySensorEntity):
@@ -34,7 +34,15 @@ class VedoSensor(ComelitDevice, BinarySensorEntity):
 
     def __init__(self, id: int, description: str, state: str) -> None:
         """Initialize the sensor."""
-        ComelitDevice.__init__(self, str(id), "vedo", description)
+        ComelitDevice.__init__(
+            self,
+            str(id),
+            "vedo",
+            description,
+            device_id=f"vedo_zone_{id}",
+            entity_name=None,
+            model="Vedo Zone",
+        )
         self._state = state
 
     @property

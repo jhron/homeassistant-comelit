@@ -23,7 +23,7 @@ async def async_setup_entry(
     """Set up Comelit sensors."""
     hub = hass.data[DOMAIN][entry.entry_id]
     hub.sensor_add_entities = async_add_entities
-    _LOGGER.info("Comelit Sensor Integration started")
+    _LOGGER.debug("Comelit Sensor Integration started")
 
 
 class ComelitSensor(ComelitDevice, SensorEntity):
@@ -38,9 +38,20 @@ class ComelitSensor(ComelitDevice, SensorEntity):
         icon: str,
         unit_of_measurement: str,
         device_class: SensorDeviceClass | None,
+        *,
+        device_id: str | None = None,
+        model: str | None = None,
     ) -> None:
         """Initialize the sensor."""
-        ComelitDevice.__init__(self, id, sensor_type, description)
+        ComelitDevice.__init__(
+            self,
+            id,
+            sensor_type,
+            description,
+            device_id=device_id,
+            entity_name=None,
+            model=model,
+        )
         self._type = sensor_type
         self._icon = icon
         self._state = state
@@ -90,6 +101,7 @@ class PowerSensor(ComelitSensor):
             icon,
             UnitOfPower.WATT,
             SensorDeviceClass.POWER,
+            model="SimpleHome Power Meter",
         )
 
 
@@ -107,6 +119,8 @@ class TemperatureSensor(ComelitSensor):
             "mdi:home-thermometer",
             UnitOfTemperature.CELSIUS,
             SensorDeviceClass.TEMPERATURE,
+            device_id=id,
+            model="SimpleHome Climate Zone",
         )
 
 
@@ -124,4 +138,6 @@ class HumiditySensor(ComelitSensor):
             "mdi:water-percent",
             "%",
             SensorDeviceClass.HUMIDITY,
+            device_id=id,
+            model="SimpleHome Climate Zone",
         )

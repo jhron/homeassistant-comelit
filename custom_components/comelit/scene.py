@@ -23,7 +23,7 @@ async def async_setup_entry(
     """Set up Comelit scenes."""
     hub = hass.data[DOMAIN][entry.entry_id]
     hub.scene_add_entities = async_add_entities
-    _LOGGER.info("Comelit Scene Integration started")
+    _LOGGER.debug("Comelit Scene Integration started")
 
 
 class ComelitScenario(ComelitDevice, Scene):
@@ -32,7 +32,15 @@ class ComelitScenario(ComelitDevice, Scene):
     def __init__(self, id: str, description: str, hub) -> None:
         """Initialize the scenario."""
         self._hub = hub
-        ComelitDevice.__init__(self, id, None, description)
+        ComelitDevice.__init__(
+            self,
+            id,
+            None,
+            description,
+            device_id=id,
+            entity_name=None,
+            model="SimpleHome Scenario",
+        )
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Activate the scenario."""

@@ -13,9 +13,6 @@ from homeassistant.components.climate import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_TEMPERATURE,
-    STATE_OFF,
-    STATE_IDLE,
-    STATE_ON,
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
@@ -26,6 +23,16 @@ from .comelit_device import ComelitDevice
 
 _LOGGER = logging.getLogger(__name__)
 
+# Comelit auto_man values
+COMELIT_MODE_AUTO = 1
+COMELIT_MODE_MANUAL = 2
+COMELIT_MODE_OFF_5 = 5
+COMELIT_MODE_OFF_6 = 6
+
+# Preset modes for HA
+PRESET_MANUAL = "manual"
+PRESET_AUTO = "auto"
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -35,11 +42,22 @@ async def async_setup_entry(
     """Set up Comelit climate entities."""
     hub = hass.data[DOMAIN][entry.entry_id]
     hub.climate_add_entities = async_add_entities
-    _LOGGER.info("Comelit Climate Integration started")
+    _LOGGER.debug("Comelit Climate Integration started")
 
 
 class ComelitClimate(ComelitDevice, ClimateEntity):
     """Representation of a Comelit climate device."""
+
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_min_temp = 5.0
+    _attr_max_temp = 30.0
+    _attr_target_temperature_step = 0.5
+    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
+    _attr_preset_modes = [PRESET_MANUAL, PRESET_AUTO]
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.PRESET_MODE
+    )
 
     def __init__(
         self,
@@ -49,78 +67,155 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
         hub,
     ) -> None:
         """Initialize the climate device."""
-        ComelitDevice.__init__(self, id, "climate", description)
+        ComelitDevice.__init__(
+            self,
+            id,
+            "climate",
+            description,
+            device_id=id,
+            entity_name=None,
+            model="SimpleHome Climate Zone",
+        )
         self._hub = hub
-        self._state = state_dict
+        self._climate_data = state_dict
 
     @property
     def hvac_mode(self) -> HVACMode:
         """Return the current HVAC mode."""
-        if self._state.get("status"):
-            if self._state.get("is_winter_season"):
-                return HVACMode.HEAT
-            return HVACMode.COOL
-        return HVACMode.OFF
-
-    @property
-    def hvac_modes(self) -> list[HVACMode]:
-        """Return the list of available HVAC modes."""
-        return [HVACMode.HEAT, HVACMode.COOL, HVACMode.OFF]
+        auto_man = self._climate_data.get("auto_man", COMELIT_MODE_OFF_6)
+        
+        if auto_man in (COMELIT_MODE_OFF_5, COMELIT_MODE_OFF_6):
+            return HVACMode.OFF
+        
+        # For both AUTO and MANUAL, show HEAT or COOL based on season
+        if self._climate_data.get("is_winter_season"):
+            return HVACMode.HEAT
+        return HVACMode.COOL
 
     @property
     def hvac_action(self) -> HVACAction:
         """Return the current HVAC action."""
-        if self._state.get("status"):
-            if self._state.get("is_winter_season"):
+        auto_man = self._climate_data.get("auto_man", COMELIT_MODE_OFF_6)
+        powerst = self._climate_data.get("powerst", 0)
+        
+        if auto_man in (COMELIT_MODE_OFF_5, COMELIT_MODE_OFF_6):
+            return HVACAction.OFF
+        
+        # powerst 1 = actively heating/cooling, 0 = idle
+        if powerst == 1:
+            if self._climate_data.get("is_winter_season"):
                 return HVACAction.HEATING
             return HVACAction.COOLING
-        return HVACAction.IDLE if self._state.get("is_enabled") else HVACAction.OFF
+        
+        return HVACAction.IDLE
+
+    @property
+    def preset_mode(self) -> str | None:
+        """Return the current preset mode."""
+        auto_man = self._climate_data.get("auto_man", COMELIT_MODE_OFF_6)
+        
+        if auto_man == COMELIT_MODE_AUTO:
+            return PRESET_AUTO
+        elif auto_man == COMELIT_MODE_MANUAL:
+            return PRESET_MANUAL
+        return None
 
     @property
     def target_temperature(self) -> float | None:
         """Return the target temperature."""
-        return self._state.get("target_temperature")
-
-    @property
-    def temperature_unit(self) -> str:
-        """Return the temperature unit."""
-        return UnitOfTemperature.CELSIUS
+        return self._climate_data.get("target_temperature")
 
     @property
     def current_temperature(self) -> float | None:
         """Return the current temperature."""
-        return self._state.get("measured_temperature")
+        return self._climate_data.get("measured_temperature")
 
     @property
     def current_humidity(self) -> float | None:
         """Return the current humidity."""
-        return self._state.get("measured_humidity")
+        return self._climate_data.get("measured_humidity")
 
-    @property
-    def supported_features(self) -> ClimateEntityFeature:
-        """Return the supported features."""
-        return ClimateEntityFeature.TARGET_TEMPERATURE
+    def update_state(self, state_dict: dict[str, Any]) -> None:
+        """Update climate state from hub data."""
+        if self._hub.enable_climate_debug:
+            changes = [
+                f"{key}={self._climate_data.get(key)}->{state_dict.get(key)}"
+                for key in sorted(set(self._climate_data) | set(state_dict))
+                if self._climate_data.get(key) != state_dict.get(key)
+            ]
+            if changes:
+                _LOGGER.info("Climate update for %s: %s", self.name, ", ".join(changes))
+        self._climate_data = state_dict
+        self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set the target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
-        if temperature is not None:
-            await self._hub.async_climate_set_temperature(self._id, temperature)
-            self._state["target_temperature"] = temperature
-            self.async_write_ha_state()
+        if temperature is None:
+            return
+
+        if self._hub.enable_climate_debug:
+            _LOGGER.info("Climate command from HA for %s: set_temperature=%s", self.name, temperature)
+            
+        auto_man = self._climate_data.get("auto_man", COMELIT_MODE_OFF_6)
+        
+        if auto_man == COMELIT_MODE_AUTO:
+            _LOGGER.warning(
+                "Cannot set temperature in AUTO mode for %s. Switch to MANUAL first.",
+                self.name
+            )
+            return
+        
+        if auto_man in (COMELIT_MODE_OFF_5, COMELIT_MODE_OFF_6):
+            _LOGGER.warning(
+                "Cannot set temperature when OFF for %s. Turn on first.",
+                self.name
+            )
+            return
+            
+        await self._hub.async_climate_set_temperature(self._id, temperature)
+        self._climate_data["target_temperature"] = temperature
+        self.async_write_ha_state()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set the HVAC mode."""
-        await self._hub.async_climate_set_state(self._id, hvac_mode)
+        if self._hub.enable_climate_debug:
+            _LOGGER.info("Climate command from HA for %s: hvac_mode=%s", self.name, hvac_mode)
+        
+        if hvac_mode == HVACMode.OFF:
+            await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_OFF_6)
+            self._climate_data["auto_man"] = COMELIT_MODE_OFF_6
+        elif hvac_mode == HVACMode.HEAT:
+            # Turn on in manual mode, set winter season
+            await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_MANUAL)
+            await self._hub.async_climate_set_season(self._id, is_winter=True)
+            self._climate_data["auto_man"] = COMELIT_MODE_MANUAL
+            self._climate_data["is_winter_season"] = True
+        elif hvac_mode == HVACMode.COOL:
+            # Turn on in manual mode, set summer season
+            await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_MANUAL)
+            await self._hub.async_climate_set_season(self._id, is_winter=False)
+            self._climate_data["auto_man"] = COMELIT_MODE_MANUAL
+            self._climate_data["is_winter_season"] = False
+        else:
+            _LOGGER.warning("Unsupported HVAC mode: %s", hvac_mode)
+            return
+        
         self.async_write_ha_state()
 
-    @property
-    def state(self) -> str:
-        """Return the current state."""
-        state_mapping = {
-            HVACAction.HEATING: STATE_ON,
-            HVACAction.COOLING: STATE_ON,
-            HVACAction.IDLE: STATE_IDLE,
-            HVACAction.OFF: STATE_OFF,
-        }
-        return state_mapping.get(self.hvac_action, STATE_OFF)
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        """Set the preset mode."""
+        if self._hub.enable_climate_debug:
+            _LOGGER.info("Climate command from HA for %s: preset_mode=%s", self.name, preset_mode)
+        
+        if preset_mode == PRESET_AUTO:
+            await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_AUTO)
+            self._climate_data["auto_man"] = COMELIT_MODE_AUTO
+        elif preset_mode == PRESET_MANUAL:
+            await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_MANUAL)
+            self._climate_data["auto_man"] = COMELIT_MODE_MANUAL
+        else:
+            _LOGGER.warning("Unsupported preset mode: %s", preset_mode)
+            return
+        
+        self.async_write_ha_state()

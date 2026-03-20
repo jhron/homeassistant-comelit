@@ -32,6 +32,20 @@
           "password": "Vedo Password",
           "scan_interval": "Scan Interval (seconds)"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Comelit",
+        "description": "Update the connection settings for this integration.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "mqtt_user": "MQTT Username",
+          "mqtt_password": "MQTT Password",
+          "serial": "Hub Serial Number",
+          "username": "Hub Username",
+          "password": "Password",
+          "client": "MQTT Client ID"
+        }
       }
     },
     "error": {
@@ -40,7 +54,21 @@
       "unknown": "Unexpected error"
     },
     "abort": {
-      "already_configured": "Device is already configured"
+      "already_configured": "Device is already configured",
+      "reconfigure_successful": "Configuration was updated",
+      "wrong_device": "The updated settings point to a different device"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Comelit Options",
+        "description": "Adjust runtime settings for this integration.",
+        "data": {
+          "scan_interval": "Scan Interval (seconds)",
+          "enable_climate_debug": "Enable detailed climate debug logging"
+        }
+      }
     }
   }
 }

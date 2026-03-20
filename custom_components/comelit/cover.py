@@ -28,7 +28,7 @@ async def async_setup_entry(
     """Set up Comelit covers."""
     hub = hass.data[DOMAIN][entry.entry_id]
     hub.cover_add_entities = async_add_entities
-    _LOGGER.info("Comelit Cover Integration started")
+    _LOGGER.debug("Comelit Cover Integration started")
 
 
 class ComelitCover(ComelitDevice, CoverEntity):
@@ -43,7 +43,15 @@ class ComelitCover(ComelitDevice, CoverEntity):
         hub,
     ) -> None:
         """Initialize the cover."""
-        ComelitDevice.__init__(self, id, None, description)
+        ComelitDevice.__init__(
+            self,
+            id,
+            None,
+            description,
+            device_id=id,
+            entity_name=None,
+            model="SimpleHome Shutter",
+        )
         self._state = closed
         self._hub = hub
 

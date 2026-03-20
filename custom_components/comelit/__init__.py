@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.const import (
     CONF_HOST,
     CONF_PASSWORD,
@@ -20,11 +21,13 @@ from .const import (
     CONF_MQTT_PASSWORD,
     CONF_SERIAL,
     CONF_CLIENT,
+    CONF_ENABLE_CLIMATE_DEBUG,
     DEVICE_TYPE_HUB,
     DEVICE_TYPE_VEDO,
     PLATFORMS_HUB,
     PLATFORMS_VEDO,
 )
+from .exception import ComelitAuthError, ComelitConnectionError
 from .hub import ComelitHub
 from .vedo import ComelitVedo
 
@@ -33,9 +36,25 @@ _LOGGER = logging.getLogger(__name__)
 type ComelitConfigEntry = ConfigEntry[ComelitHub | ComelitVedo]
 
 
+def _get_scan_interval(entry: ConfigEntry) -> int:
+    """Return the effective scan interval for a config entry."""
+    return entry.options.get(CONF_SCAN_INTERVAL, entry.data[CONF_SCAN_INTERVAL])
+
+
+def _get_enable_climate_debug(entry: ConfigEntry) -> bool:
+    """Return whether detailed climate debug logging is enabled."""
+    return entry.options.get(CONF_ENABLE_CLIMATE_DEBUG, False)
+
+
+async def async_reload_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> None:
+    """Reload a config entry after options update."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> bool:
     """Set up Comelit from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     device_type = entry.data[CONF_DEVICE_TYPE]
 
@@ -50,11 +69,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
             mqtt_password=entry.data[CONF_MQTT_PASSWORD],
             hub_user=entry.data[CONF_USERNAME],
             hub_password=entry.data[CONF_PASSWORD],
-            scan_interval=entry.data[CONF_SCAN_INTERVAL],
+            scan_interval=_get_scan_interval(entry),
+            enable_climate_debug=_get_enable_climate_debug(entry),
         )
 
-        if not await hub.async_connect():
-            return False
+        try:
+            await hub.async_connect()
+        except ComelitAuthError as err:
+            raise ConfigEntryAuthFailed(
+                f"Comelit Hub authentication failed for {entry.data[CONF_HOST]}"
+            ) from err
+        except ComelitConnectionError as err:
+            raise ConfigEntryNotReady(
+                f"Unable to connect to Comelit Hub at {entry.data[CONF_HOST]}"
+            ) from err
 
         hass.data[DOMAIN][entry.entry_id] = hub
         entry.runtime_data = hub
@@ -68,11 +96,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
             host=entry.data[CONF_HOST],
             port=entry.data[CONF_PORT],
             password=entry.data[CONF_PASSWORD],
-            scan_interval=entry.data[CONF_SCAN_INTERVAL],
+            scan_interval=_get_scan_interval(entry),
         )
 
-        if not await vedo.async_connect():
-            return False
+        try:
+            await vedo.async_connect()
+        except ComelitAuthError as err:
+            raise ConfigEntryAuthFailed(
+                f"Comelit Vedo authentication failed for {entry.data[CONF_HOST]}"
+            ) from err
+        except ComelitConnectionError as err:
+            raise ConfigEntryNotReady(
+                f"Unable to connect to Comelit Vedo at {entry.data[CONF_HOST]}"
+            ) from err
 
         hass.data[DOMAIN][entry.entry_id] = vedo
         entry.runtime_data = vedo

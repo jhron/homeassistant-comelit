@@ -24,7 +24,7 @@ async def async_setup_entry(
     """Set up Comelit switches."""
     hub = hass.data[DOMAIN][entry.entry_id]
     hub.switch_add_entities = async_add_entities
-    _LOGGER.info("Comelit Switch Integration started")
+    _LOGGER.debug("Comelit Switch Integration started")
 
 
 class ComelitSwitch(ComelitDevice, SwitchEntity):
@@ -40,7 +40,15 @@ class ComelitSwitch(ComelitDevice, SwitchEntity):
         """Initialize the switch."""
         self._hub = hub
         self._icon = icon
-        ComelitDevice.__init__(self, id, None, description)
+        ComelitDevice.__init__(
+            self,
+            id,
+            None,
+            description,
+            device_id=id,
+            entity_name=None,
+            model="SimpleHome Switch",
+        )
 
     @property
     def is_on(self) -> bool:

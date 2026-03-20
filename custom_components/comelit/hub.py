@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
+from contextlib import suppress
 from typing import Any, Callable
 
 import aiomqtt
@@ -18,11 +20,16 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.components.climate import HVACMode
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .exception import ComelitAuthError, ComelitConnectionError
 
 _LOGGER = logging.getLogger(__name__)
+
+HANDSHAKE_TIMEOUT = 15
+RECONNECT_DELAY = 10
+STATUS_STALE_TIMEOUT = 15
+ENTITY_BATCH_YIELD = 10
 
 
 class RequestType:
@@ -91,6 +98,7 @@ class ComelitHub:
         hub_user: str,
         hub_password: str,
         scan_interval: int,
+        enable_climate_debug: bool = False,
     ) -> None:
         """Initialize the hub."""
         self.hass = hass
@@ -103,20 +111,30 @@ class ComelitHub:
         self.hub_user = hub_user
         self.hub_password = hub_password
         self.scan_interval = scan_interval
+        self.enable_climate_debug = enable_climate_debug
 
         self.sequence_id = 1
         self.agent_id = 10
         self.sessiontoken = ""
+        self._reauth_in_progress = False  # Prevent re-auth loops
+        self._last_reauth_time = 0  # Timestamp of last re-auth attempt
 
         self.topic_rx = f"HSrv/{hub_serial}/rx/{client_name}"
         self.topic_tx = f"HSrv/{hub_serial}/tx/{client_name}"
 
         self._client: aiomqtt.Client | None = None
         self._connected = False
+        self._shutdown = False
         self._listen_task: asyncio.Task | None = None
         self._process_task: asyncio.Task | None = None
         self._status_task: asyncio.Task | None = None
+        self._reconnect_task: asyncio.Task | None = None
         self._message_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._announce_event = asyncio.Event()
+        self._login_event = asyncio.Event()
+        self._login_error: str | None = None
+        self._status_request_pending = False
+        self._last_status_request = 0.0
 
         # Entity storage
         self.sensors: dict[str, Any] = {}
@@ -134,11 +152,27 @@ class ComelitHub:
         self.scene_add_entities: Callable | None = None
         self.switch_add_entities: Callable | None = None
 
-        _LOGGER.info("Initializing Comelit Hub: %s:%s serial=%s", hub_host, mqtt_port, hub_serial)
+        _LOGGER.debug(
+            "Initializing Comelit Hub: %s:%s serial=%s",
+            hub_host,
+            mqtt_port,
+            hub_serial,
+        )
 
-    async def async_connect(self) -> bool:
+    async def async_connect(self) -> None:
         """Connect to the MQTT broker."""
+        self._shutdown = False
+        await self._async_open_connection()
+
+    async def _async_open_connection(self) -> None:
+        """Open the MQTT connection and complete the hub login handshake."""
         try:
+            self._announce_event.clear()
+            self._login_event.clear()
+            self._login_error = None
+            self.sessiontoken = ""
+            self._reauth_in_progress = False
+
             self._client = aiomqtt.Client(
                 hostname=self.hub_host,
                 port=self.mqtt_port,
@@ -162,65 +196,166 @@ class ComelitHub:
             # Send announce
             await self._async_announce()
 
+            await asyncio.wait_for(self._announce_event.wait(), timeout=HANDSHAKE_TIMEOUT)
+            await asyncio.wait_for(self._login_event.wait(), timeout=HANDSHAKE_TIMEOUT)
+
+            if self._login_error:
+                raise ComelitAuthError(self._login_error)
+
+            if not self.sessiontoken:
+                raise ComelitAuthError("Comelit Hub login did not return a session token")
+
             # Start status update task
             self._status_task = self.hass.async_create_background_task(
                 self._async_status_updater(), "comelit_hub_status"
             )
 
+            self._set_entities_available(True)
             _LOGGER.info("Connected to Comelit Hub")
-            return True
 
+        except ComelitAuthError:
+            await self._async_cleanup_connection()
+            raise
+        except asyncio.TimeoutError as err:
+            await self._async_cleanup_connection()
+            raise ComelitConnectionError("Timed out during Comelit Hub handshake") from err
         except aiomqtt.MqttError as err:
-            _LOGGER.error("Failed to connect to MQTT broker: %s", err)
-            return False
+            await self._async_cleanup_connection()
+            raise ComelitConnectionError("Failed to connect to Comelit MQTT broker") from err
 
     async def async_disconnect(self) -> None:
         """Disconnect from the MQTT broker."""
+        self._shutdown = True
+
+        if self._reconnect_task:
+            self._reconnect_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._reconnect_task
+            self._reconnect_task = None
+
+        await self._async_cleanup_connection()
+        _LOGGER.info("Disconnected from Comelit Hub")
+
+    async def _async_cleanup_connection(self) -> None:
+        """Clean up the active MQTT connection and worker tasks."""
         self._connected = False
+        self._announce_event.clear()
+        self._login_event.clear()
+        self._login_error = None
+        self.sessiontoken = ""
+        self._reauth_in_progress = False
+        self._status_request_pending = False
+        self._last_status_request = 0.0
+
+        current_task = asyncio.current_task()
 
         if self._listen_task:
             self._listen_task.cancel()
-            try:
-                await self._listen_task
-            except asyncio.CancelledError:
-                pass
+            if self._listen_task is not current_task:
+                with suppress(asyncio.CancelledError):
+                    await self._listen_task
+            self._listen_task = None
 
         if self._process_task:
             self._process_task.cancel()
-            try:
-                await self._process_task
-            except asyncio.CancelledError:
-                pass
+            if self._process_task is not current_task:
+                with suppress(asyncio.CancelledError):
+                    await self._process_task
+            self._process_task = None
 
         if self._status_task:
             self._status_task.cancel()
-            try:
-                await self._status_task
-            except asyncio.CancelledError:
-                pass
+            if self._status_task is not current_task:
+                with suppress(asyncio.CancelledError):
+                    await self._status_task
+            self._status_task = None
 
         if self._client:
-            await self._client.__aexit__(None, None, None)
+            with suppress(aiomqtt.MqttError):
+                await self._client.__aexit__(None, None, None)
             self._client = None
 
-        _LOGGER.info("Disconnected from Comelit Hub")
+        while True:
+            try:
+                self._message_queue.get_nowait()
+                self._message_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    def _set_entities_available(self, available: bool) -> None:
+        """Update availability for all known entities."""
+        entity_maps = (
+            self.sensors,
+            self.climates,
+            self.lights,
+            self.covers,
+            self.scenes,
+            self.switches,
+        )
+        for entity_map in entity_maps:
+            for entity in entity_map.values():
+                if hasattr(entity, "set_available"):
+                    entity.set_available(available)
+
+    def _log_climate_debug(self, message: str, *args: Any) -> None:
+        """Log detailed climate debug information when enabled."""
+        if self.enable_climate_debug:
+            _LOGGER.info(message, *args)
+
+    def _schedule_reconnect(self, reason: str) -> None:
+        """Schedule a reconnect attempt after connection loss."""
+        if self._shutdown:
+            return
+
+        if self._reconnect_task and not self._reconnect_task.done():
+            return
+
+        _LOGGER.warning("Comelit Hub connection lost: %s", reason)
+        self._reconnect_task = self.hass.async_create_background_task(
+            self._async_reconnect_loop(reason),
+            "comelit_hub_reconnect",
+        )
+
+    async def _async_reconnect_loop(self, reason: str) -> None:
+        """Reconnect to the hub until successful or shutting down."""
+        try:
+            await self._async_cleanup_connection()
+            self._set_entities_available(False)
+
+            while not self._shutdown:
+                try:
+                    _LOGGER.info("Attempting Comelit Hub reconnect after: %s", reason)
+                    await self._async_open_connection()
+                    self._set_entities_available(True)
+                    _LOGGER.info("Comelit Hub reconnect successful")
+                    return
+                except ComelitAuthError as err:
+                    _LOGGER.error("Comelit Hub reconnect aborted due to authentication failure: %s", err)
+                    return
+                except ComelitConnectionError as err:
+                    _LOGGER.warning(
+                        "Comelit Hub reconnect failed, retrying in %s seconds: %s",
+                        RECONNECT_DELAY,
+                        err,
+                    )
+                    await asyncio.sleep(RECONNECT_DELAY)
+
+            _LOGGER.debug("Comelit Hub reconnect loop stopped")
+        finally:
+            self._reconnect_task = None
 
     async def _async_listen(self) -> None:
         """Listen for MQTT messages and put them in queue."""
         try:
             async for message in self._client.messages:
                 try:
-                    # Parse JSON in executor to avoid blocking
-                    payload = await self.hass.async_add_executor_job(
-                        json.loads, message.payload.decode("utf-8")
-                    )
-                    # Put message in queue for processing (non-blocking)
-                    await self._message_queue.put(payload)
+                    payload = json.loads(message.payload)
+                    self._message_queue.put_nowait(payload)
                 except json.JSONDecodeError as err:
                     _LOGGER.error("Failed to decode message: %s", err)
         except aiomqtt.MqttError as err:
             if self._connected:
-                _LOGGER.error("MQTT connection lost: %s", err)
+                self._schedule_reconnect(str(err))
 
     async def _async_process_messages(self) -> None:
         """Process messages from the queue."""
@@ -237,16 +372,26 @@ class ComelitHub:
                 await self._async_dispatch(payload)
                 self._message_queue.task_done()
 
-                # Yield control after each message
-                await asyncio.sleep(0)
-
             except Exception as err:
                 _LOGGER.exception("Error processing message: %s", err)
 
     async def _async_status_updater(self) -> None:
         """Periodically request status updates."""
         while self._connected:
-            if self.sessiontoken:
+            # Only request status if we have a valid token and not re-authenticating
+            status_is_stale = (
+                self._status_request_pending
+                and (time.monotonic() - self._last_status_request) > max(self.scan_interval * 2, STATUS_STALE_TIMEOUT)
+            )
+            if status_is_stale:
+                _LOGGER.debug("Clearing stale pending status request")
+                self._status_request_pending = False
+
+            if (
+                self.sessiontoken
+                and not self._reauth_in_progress
+                and not self._status_request_pending
+            ):
                 await self._async_update_status()
             await asyncio.sleep(self.scan_interval)
 
@@ -263,16 +408,37 @@ class ComelitHub:
             await self._client.publish(self.topic_rx, json.dumps(data))
             self.sequence_id += 1
         except aiomqtt.MqttError as err:
-            _LOGGER.error("Failed to publish message: %s", err)
+            self._schedule_reconnect(f"publish failed: {err}")
 
     async def _async_dispatch(self, payload: dict[str, Any]) -> None:
         """Dispatch incoming messages."""
+        # Check for invalid token on any response
+        if payload.get("req_result") == 1 and "invalid token" in payload.get("message", "").lower():
+            current_time = time.time()
+            # Only re-auth if not already in progress and at least 5 seconds since last attempt
+            if not self._reauth_in_progress and (current_time - self._last_reauth_time) > 5:
+                _LOGGER.warning("Token expired (seq_id=%s), re-authenticating...", payload.get("seq_id"))
+                self._reauth_in_progress = True
+                self._last_reauth_time = current_time
+                self.sessiontoken = ""
+                await self._async_announce()
+            else:
+                _LOGGER.debug("Ignoring invalid token response (seq_id=%s) - re-auth in progress or cooldown", 
+                             payload.get("seq_id"))
+            return
+        
         req_type = payload.get("req_type")
 
         if req_type == RequestType.ANNOUNCE:
             await self._async_handle_announce(payload)
         elif req_type == RequestType.LOGIN:
+            if payload.get("req_result") == 1:
+                self._login_error = payload.get("message", "Authentication failed")
+                self._login_event.set()
+                return
+
             self._handle_token(payload)
+            self._reauth_in_progress = False  # Re-auth complete
         elif req_type == RequestType.STATUS:
             await self._async_handle_status(payload)
         elif req_type == RequestType.PARAMETERS:
@@ -289,6 +455,7 @@ class ComelitHub:
     async def _async_handle_announce(self, payload: dict[str, Any]) -> None:
         """Handle announce response."""
         self.agent_id = payload["out_data"][0]["agent_id"]
+        self._announce_event.set()
         _LOGGER.debug("Announce received. Agent ID: %s", self.agent_id)
 
         await self._async_publish({
@@ -302,6 +469,9 @@ class ComelitHub:
     def _handle_token(self, payload: dict[str, Any]) -> None:
         """Handle login response."""
         self.sessiontoken = payload.get(HubFields.TOKEN, "")
+        if not self.sessiontoken:
+            self._login_error = payload.get("message", "Authentication failed")
+        self._login_event.set()
         _LOGGER.debug("Received session token")
 
     def _handle_parameters(self, payload: dict[str, Any]) -> None:
@@ -311,6 +481,8 @@ class ComelitHub:
 
     async def _async_update_status(self) -> None:
         """Request status update."""
+        self._status_request_pending = True
+        self._last_status_request = time.monotonic()
         await self._async_publish({
             "req_type": RequestType.STATUS,
             "req_sub_type": -1,
@@ -321,14 +493,29 @@ class ComelitHub:
     async def _async_handle_status(self, payload: dict[str, Any]) -> None:
         """Handle status response."""
         try:
-            elements = payload["out_data"][0][HubFields.ELEMENTS]
+            if "out_data" not in payload:
+                _LOGGER.debug("Status response without out_data: %s", payload)
+                return
+                
+            out_data = payload["out_data"]
+            if not out_data or not isinstance(out_data, list):
+                return
+                
+            first_item = out_data[0]
+            if HubFields.ELEMENTS not in first_item:
+                _LOGGER.debug("Status response without elements: %s", payload)
+                return
+                
+            elements = first_item[HubFields.ELEMENTS]
             await self._async_update_entities(elements)
         except Exception as err:
             _LOGGER.error("Error handling status: %s", err)
+        finally:
+            self._status_request_pending = False
 
     async def _async_update_entities(self, elements: list[dict[str, Any]]) -> None:
         """Update entities from status response."""
-        for item in elements:
+        for index, item in enumerate(elements, start=1):
             try:
                 entity_id = item.get(HubFields.ID, "")
 
@@ -365,8 +552,8 @@ class ComelitHub:
             except Exception as err:
                 _LOGGER.error("Error updating entity %s: %s", item, err)
 
-            # Yield control to event loop to prevent blocking
-            await asyncio.sleep(0)
+            if index % ENTITY_BATCH_YIELD == 0:
+                await asyncio.sleep(0)
 
     async def _async_update_sensor(self, entity_id: str, data: dict[str, Any]) -> None:
         """Update or create sensor entity."""
@@ -397,14 +584,13 @@ class ComelitHub:
 
     async def _async_add_or_update_sensor(self, sensor: Any, value: Any) -> None:
         """Add or update a sensor."""
-        name = sensor.entity_name
-        if name not in self.sensors:
+        unique_id = sensor.unique_id
+        if unique_id not in self.sensors:
             if self.sensor_add_entities:
                 self.sensor_add_entities([sensor])
-                self.sensors[name] = sensor
-                _LOGGER.info("Added sensor: %s", name)
+                self.sensors[unique_id] = sensor
         else:
-            self.sensors[name].update_state(value)
+            self.sensors[unique_id].update_state(value)
 
     async def _async_update_climate(self, entity_id: str, data: dict[str, Any]) -> None:
         """Update or create climate entity."""
@@ -415,11 +601,20 @@ class ComelitHub:
         try:
             measured_temp = float(format(float(data[HubFields.TEMPERATURE]), ".1f")) / 10
             target_temp = float(format(float(data[HubFields.TARGET_TEMPERATURE]), ".1f")) / 10
+            
+            # Parse auto_man value (1=auto, 2=manual, 5=off) - data comes as string
+            auto_man = int(data.get("auto_man", 5))
+            
+            # Parse powerst (0=idle, 1=actively heating/cooling) - data comes as string
+            powerst = int(data.get("powerst", 0))
+            
+            # Parse season
+            is_winter = bool(int(data.get(HubFields.WINTER_SEASON, 0)))
 
             state_dict = {
-                "is_enabled": int(data.get("auto_man", 0)) == 2,
-                "is_winter_season": bool(int(data.get(HubFields.WINTER_SEASON, 0))),
-                "status": bool(int(data.get(HubFields.STATUS, 0))),
+                "auto_man": auto_man,
+                "powerst": powerst,
+                "is_winter_season": is_winter,
                 "measured_temperature": measured_temp,
                 "target_temperature": target_temp,
             }
@@ -427,18 +622,16 @@ class ComelitHub:
             if HubFields.HUMIDITY in data:
                 state_dict["measured_humidity"] = float(data[HubFields.HUMIDITY])
 
-            name = f"comelit_climate_{description.lower().replace(' ', '-')}"
-            if name not in self.climates:
+            if entity_id not in self.climates:
                 if self.climate_add_entities:
                     climate = ComelitClimate(entity_id, description, state_dict, self)
                     self.climate_add_entities([climate])
-                    self.climates[name] = climate
-                    _LOGGER.info("Added climate: %s", name)
+                    self.climates[entity_id] = climate
             else:
-                self.climates[name].update_state(state_dict)
+                self.climates[entity_id].update_state(state_dict)
 
         except Exception as err:
-            _LOGGER.error("Error updating climate: %s", err)
+            _LOGGER.error("Error updating climate %s: %s", description, err)
 
     async def _async_update_light(self, entity_id: str, data: dict[str, Any]) -> None:
         """Update or create light entity."""
@@ -459,9 +652,8 @@ class ComelitHub:
                     light = ComelitLight(entity_id, description, state, brightness, self)
                     self.light_add_entities([light])
                     self.lights[entity_id] = light
-                    _LOGGER.info("Added light: %s", description)
             else:
-                self.lights[entity_id].update_state(state)
+                self.lights[entity_id].update_state(state, brightness)
 
         except Exception as err:
             _LOGGER.error("Error updating light: %s", err)
@@ -496,7 +688,6 @@ class ComelitHub:
                     cover = ComelitCover(entity_id, description, state, position, self)
                     self.cover_add_entities([cover])
                     self.covers[entity_id] = cover
-                    _LOGGER.info("Added cover: %s", description)
             else:
                 self.covers[entity_id].update_state(state, position)
 
@@ -515,7 +706,6 @@ class ComelitHub:
                     scene = ComelitScenario(entity_id, description, self)
                     self.scene_add_entities([scene])
                     self.scenes[entity_id] = scene
-                    _LOGGER.info("Added scene: %s", description)
 
         except Exception as err:
             _LOGGER.error("Error updating scene: %s", err)
@@ -534,7 +724,6 @@ class ComelitHub:
                     switch = ComelitSwitch(entity_id, description, None, self)
                     self.switch_add_entities([switch])
                     self.switches[entity_id] = switch
-                    _LOGGER.info("Added switch: %s", description)
             else:
                 self.switches[entity_id].update_state(state)
 
@@ -630,22 +819,69 @@ class ComelitHub:
         })
 
     async def async_climate_set_state(self, entity_id: str, hvac_mode: HVACMode) -> None:
-        """Set climate HVAC mode."""
-        if hvac_mode == HVACMode.HEAT:
-            act_type = 4
-            act_params = [1]
-        elif hvac_mode == HVACMode.COOL:
-            act_type = 4
-            act_params = [0]
-        else:  # OFF
+        """Set climate HVAC mode (deprecated, use async_climate_set_mode)."""
+        _LOGGER.warning("async_climate_set_state is deprecated, use async_climate_set_mode")
+        if hvac_mode == HVACMode.OFF:
+            await self.async_climate_set_mode(entity_id, 5)  # OFF
+        else:
+            await self.async_climate_set_mode(entity_id, 2)  # MANUAL
+
+    async def async_climate_set_mode(self, entity_id: str, mode: int) -> None:
+        """Set climate mode (1=auto, 2=manual, 5/6=off)."""
+        # Based on working commands:
+        # - act_type=0, act_params=[0] = OFF (works)
+        # - act_type=2, act_params=[temp] = set temperature (works)
+        # 
+        # Theory for mode switching:
+        # - act_type=0, act_params=[1] = turn ON (maybe just enables, not mode switch)
+        # - act_type=1 = switch to MANUAL mode
+        # - act_type=3 = switch to AUTO mode
+        
+        if mode in (5, 6):  # OFF
             act_type = 0
             act_params = [0]
+        elif mode == 2:  # MANUAL - try act_type=1
+            act_type = 1
+            act_params = [1]
+        elif mode == 1:  # AUTO - try act_type=3
+            act_type = 3
+            act_params = [1]
+        else:
+            _LOGGER.error("Unknown climate mode: %s", mode)
+            return
+
+        self._log_climate_debug(
+            "Climate command for %s: mode=%s act_type=%s act_params=%s",
+            entity_id,
+            mode,
+            act_type,
+            act_params,
+        )
 
         await self._async_publish({
             "req_type": RequestType.TEMPERATURE,
             "req_sub_type": 3,
             "obj_id": entity_id,
             "act_type": act_type,
+            "act_params": act_params,
+        })
+
+    async def async_climate_set_season(self, entity_id: str, is_winter: bool) -> None:
+        """Set climate season (winter=heating, summer=cooling)."""
+        # act_type 4 controls the season (est_inv)
+        act_params = [1] if is_winter else [0]
+        
+        self._log_climate_debug(
+            "Climate command for %s: season=%s",
+            entity_id,
+            "winter" if is_winter else "summer",
+        )
+
+        await self._async_publish({
+            "req_type": RequestType.TEMPERATURE,
+            "req_sub_type": 3,
+            "obj_id": entity_id,
+            "act_type": 4,
             "act_params": act_params,
         })
 

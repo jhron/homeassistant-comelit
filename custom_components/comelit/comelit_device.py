@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import DOMAIN
 
@@ -9,33 +10,44 @@ from .const import DOMAIN
 class ComelitDevice(Entity):
     """Base class for Comelit devices."""
 
-    def __init__(self, id: str, device_type: str | None, name: str) -> None:
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        id: str,
+        device_type: str | None,
+        name: str,
+        *,
+        device_id: str | None = None,
+        entity_name: str | None = None,
+        manufacturer: str = "Comelit",
+        model: str | None = None,
+        serial_number: str | None = None,
+    ) -> None:
         """Initialize the Comelit device."""
         self._is_available = True
         self._device_type = device_type
         self._id = id
         self._state = None
+        self._attr_name = entity_name
 
-        # Build entity name and unique_id
-        name_slug = name.lower().replace(" ", "-")
+        device_identifier = device_id or id
         if device_type is None:
-            self._name = self.entity_name = f"{DOMAIN}_{name_slug}"
-            self._unique_id = f"{DOMAIN}_{id}"
+            self._attr_unique_id = f"{DOMAIN}_{id}"
         else:
-            self._name = self.entity_name = f"{DOMAIN}_{device_type}_{name_slug}"
-            self._unique_id = f"{DOMAIN}_{device_type}_{id}"
+            self._attr_unique_id = f"{DOMAIN}_{device_type}_{id}"
 
-        self._attr_has_entity_name = False
-
-    @property
-    def name(self) -> str:
-        """Return the name of the device."""
-        return self._name
-
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID."""
-        return self._unique_id
+        device_info: DeviceInfo = {
+            "identifiers": {(DOMAIN, device_identifier)},
+            "manufacturer": manufacturer,
+            "name": name,
+        }
+        if model:
+            device_info["model"] = model
+        if serial_number:
+            device_info["serial_number"] = serial_number
+        self._attr_device_info = device_info
 
     @property
     def available(self) -> bool:
@@ -49,12 +61,10 @@ class ComelitDevice(Entity):
         if old != state:
             self.async_write_ha_state()
 
-    @property
-    def state(self):
-        """Return the state of the device."""
-        return self._state
+    def set_available(self, available: bool) -> None:
+        """Update entity availability."""
+        if self._is_available == available:
+            return
 
-    @property
-    def should_poll(self) -> bool:
-        """Return False as updates are pushed."""
-        return False
+        self._is_available = available
+        self.async_write_ha_state()

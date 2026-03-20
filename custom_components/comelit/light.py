@@ -28,7 +28,7 @@ async def async_setup_entry(
     """Set up Comelit lights."""
     hub = hass.data[DOMAIN][entry.entry_id]
     hub.light_add_entities = async_add_entities
-    _LOGGER.info("Comelit Light Integration started")
+    _LOGGER.debug("Comelit Light Integration started")
 
 
 class ComelitLight(ComelitDevice, LightEntity):
@@ -43,7 +43,15 @@ class ComelitLight(ComelitDevice, LightEntity):
         hub,
     ) -> None:
         """Initialize the light."""
-        ComelitDevice.__init__(self, id, None, description)
+        ComelitDevice.__init__(
+            self,
+            id,
+            None,
+            description,
+            device_id=id,
+            entity_name=None,
+            model="SimpleHome Light",
+        )
         self._hub = hub
         self._state = state
         self._brightness = brightness
@@ -71,6 +79,18 @@ class ComelitLight(ComelitDevice, LightEntity):
     def brightness(self) -> int | None:
         """Return the brightness of the light."""
         return self._brightness
+
+    def update_state(self, state: str, brightness: int | None = None) -> None:
+        """Update light state from hub data."""
+        old_state = self._state
+        old_brightness = self._brightness
+
+        self._state = state
+        if brightness is not None:
+            self._brightness = brightness
+
+        if old_state != state or old_brightness != self._brightness:
+            self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light."""

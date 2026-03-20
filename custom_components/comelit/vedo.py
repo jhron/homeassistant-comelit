@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
@@ -12,7 +13,7 @@ from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 from homeassistant.const import STATE_ON, STATE_OFF
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .exception import ComelitAuthError, ComelitConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,33 +63,29 @@ class ComelitVedo:
         self.binary_sensor_add_entities = None
         self.alarm_add_entities = None
 
-        _LOGGER.info("Initializing Comelit Vedo: %s:%s", host, port)
+        _LOGGER.debug("Initializing Comelit Vedo: %s:%s", host, port)
 
-    async def async_connect(self) -> bool:
+    async def async_connect(self) -> None:
         """Connect to Vedo."""
+        self._session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
+        )
+
         try:
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
-            )
-
-            # Test connection
             self._uid = await self._async_login()
-            if self._uid is None:
-                return False
+        except Exception:
+            await self._session.close()
+            self._session = None
+            raise
 
-            self._connected = True
+        self._connected = True
 
-            # Start update task
-            self._update_task = self.hass.async_create_background_task(
-                self._async_updater(), "comelit_vedo_update"
-            )
+        # Start update task
+        self._update_task = self.hass.async_create_background_task(
+            self._async_updater(), "comelit_vedo_update"
+        )
 
-            _LOGGER.info("Connected to Comelit Vedo")
-            return True
-
-        except Exception as err:
-            _LOGGER.error("Failed to connect to Vedo: %s", err)
-            return False
+        _LOGGER.info("Connected to Comelit Vedo")
 
     async def async_disconnect(self) -> None:
         """Disconnect from Vedo."""
@@ -129,10 +126,10 @@ class ComelitVedo:
             headers["Cookie"] = uid
         return headers
 
-    async def _async_login(self) -> str | None:
+    async def _async_login(self) -> str:
         """Login to Vedo and return session cookie."""
         if not self._session:
-            return None
+            raise ComelitConnectionError("Vedo session is not initialized")
 
         url = self._build_url(VedoRequest.LOGIN)
         headers = self._build_headers()
@@ -141,18 +138,19 @@ class ComelitVedo:
             async with self._session.post(
                 url, data={"code": self.password}, headers=headers
             ) as response:
-                if response.status == 200:
-                    uid = response.headers.get("set-cookie")
-                    if uid:
-                        _LOGGER.debug("Logged in to Vedo")
-                        return uid
-                    _LOGGER.warning("Login failed - no cookie received")
-                else:
-                    _LOGGER.error("Login failed - status %s", response.status)
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Login error: %s", err)
+                if response.status != 200:
+                    raise ComelitConnectionError(
+                        f"Unexpected Vedo login status: {response.status}"
+                    )
 
-        return None
+                uid = response.headers.get("set-cookie")
+                if uid:
+                    _LOGGER.debug("Logged in to Vedo")
+                    return uid
+
+                raise ComelitAuthError("Invalid Vedo credentials")
+        except aiohttp.ClientError as err:
+            raise ComelitConnectionError("Unable to reach Vedo panel") from err
 
     async def _async_logout(self) -> None:
         """Logout from Vedo."""
@@ -182,7 +180,6 @@ class ComelitVedo:
                 response.raise_for_status()
                 text = await response.text(encoding="iso-8859-1")
                 if parse_json:
-                    import json
                     return json.loads(text)
                 return text
         except aiohttp.ClientError as err:
@@ -194,8 +191,14 @@ class ComelitVedo:
         while self._connected:
             try:
                 if self._uid is None:
-                    self._uid = await self._async_login()
-                    if self._uid is None:
+                    try:
+                        self._uid = await self._async_login()
+                    except ComelitAuthError as err:
+                        _LOGGER.error("Vedo authentication failed: %s", err)
+                        await asyncio.sleep(self.scan_interval)
+                        continue
+                    except ComelitConnectionError as err:
+                        _LOGGER.warning("Vedo reconnect failed: %s", err)
                         await asyncio.sleep(self.scan_interval)
                         continue
 
@@ -280,7 +283,7 @@ class ComelitVedo:
                 sensor = VedoSensor(sensor_id, name, state)
                 self.binary_sensor_add_entities([sensor])
                 self.sensors[sensor_id] = sensor
-                _LOGGER.info("Added binary sensor: %s", name)
+                _LOGGER.debug("Added binary sensor: %s", name)
         else:
             self.sensors[sensor_id].update_state(state)
 
@@ -304,7 +307,7 @@ class ComelitVedo:
                 alarm = VedoAlarm(area_id, name, state, self)
                 self.alarm_add_entities([alarm])
                 self.areas[area_id] = alarm
-                _LOGGER.info("Added alarm area: %s", name)
+                _LOGGER.debug("Added alarm area: %s", name)
         else:
             self.areas[area_id].update_state(state)
 
@@ -324,13 +327,12 @@ class ComelitVedo:
         """Perform arm/disarm action."""
         for attempt in range(1, ARM_DISARM_ATTEMPTS + 1):
             try:
-                uid = await self._async_login()
-                if uid:
-                    path = f"{VedoRequest.ACTION}?vedo=1&{action}={area_id}&force=1"
-                    await self._async_get(path, parse_json=False)
-                    _LOGGER.info("Arm/Disarm successful: %s area %s", action, area_id)
-                    await self._async_logout()
-                    return
+                self._uid = await self._async_login()
+                path = f"{VedoRequest.ACTION}?vedo=1&{action}={area_id}&force=1"
+                await self._async_get(path, parse_json=False)
+                _LOGGER.info("Arm/Disarm successful: %s area %s", action, area_id)
+                await self._async_logout()
+                return
             except Exception as err:
                 if attempt == ARM_DISARM_ATTEMPTS:
                     _LOGGER.error("Arm/Disarm failed after %s attempts: %s", ARM_DISARM_ATTEMPTS, err)

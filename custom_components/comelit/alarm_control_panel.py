@@ -25,7 +25,7 @@ async def async_setup_entry(
     """Set up Comelit Vedo alarm panels."""
     vedo = hass.data[DOMAIN][entry.entry_id]
     vedo.alarm_add_entities = async_add_entities
-    _LOGGER.info("Comelit Vedo Alarm Integration started")
+    _LOGGER.debug("Comelit Vedo Alarm Integration started")
 
 
 class VedoAlarm(ComelitDevice, AlarmControlPanelEntity):
@@ -33,9 +33,22 @@ class VedoAlarm(ComelitDevice, AlarmControlPanelEntity):
 
     def __init__(self, id: int, description: str, state, vedo) -> None:
         """Initialize the alarm panel."""
-        ComelitDevice.__init__(self, str(id), "vedo", description)
+        ComelitDevice.__init__(
+            self,
+            str(id),
+            "vedo",
+            description,
+            device_id=f"vedo_area_{id}",
+            entity_name=None,
+            model="Vedo Area",
+        )
         self._vedo = vedo
         self._state = state
+
+    @property
+    def alarm_state(self):
+        """Return the current alarm state."""
+        return self._state
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         """Disarm the alarm."""
