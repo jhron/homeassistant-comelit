@@ -46,6 +46,16 @@
           "password": "Password",
           "client": "MQTT Client ID"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate Comelit",
+        "description": "Update the authentication details for this integration.",
+        "data": {
+          "mqtt_user": "MQTT Username",
+          "mqtt_password": "MQTT Password",
+          "username": "Hub Username",
+          "password": "Password"
+        }
       }
     },
     "error": {

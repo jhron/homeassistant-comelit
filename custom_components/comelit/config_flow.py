@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Mapping
 
 import voluptuous as vol
 
@@ -148,6 +148,13 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry: ConfigEntry) -> ComelitOptionsFlow:
         """Create the options flow."""
         return ComelitOptionsFlow(config_entry)
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        """Start a reauthentication flow for an existing entry."""
+        self._device_type = entry_data[CONF_DEVICE_TYPE]
+        return await self.async_step_reauth_confirm()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -312,6 +319,123 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=_vedo_schema(current_data, include_scan_interval=False),
+            errors=errors,
+        )
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm reauthentication and update credentials."""
+        config_entry = self._get_reauth_entry()
+        self._device_type = config_entry.data[CONF_DEVICE_TYPE]
+
+        if self._device_type == DEVICE_TYPE_HUB:
+            return await self.async_step_reauth_confirm_hub(user_input)
+        return await self.async_step_reauth_confirm_vedo(user_input)
+
+    async def async_step_reauth_confirm_hub(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Reauthenticate a Comelit Hub entry."""
+        errors: dict[str, str] = {}
+        config_entry = self._get_reauth_entry()
+        current_data = dict(config_entry.data)
+
+        if user_input is not None:
+            updated_data = {
+                **current_data,
+                CONF_MQTT_USER: user_input[CONF_MQTT_USER],
+                CONF_MQTT_PASSWORD: user_input[CONF_MQTT_PASSWORD],
+                CONF_USERNAME: user_input[CONF_USERNAME],
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            try:
+                await validate_hub_connection(self.hass, updated_data)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                await self.async_set_unique_id(f"comelit_hub_{current_data[CONF_SERIAL]}")
+                self._abort_if_unique_id_mismatch(reason="wrong_device")
+                return self.async_update_reload_and_abort(
+                    config_entry,
+                    data_updates={
+                        CONF_MQTT_USER: user_input[CONF_MQTT_USER],
+                        CONF_MQTT_PASSWORD: user_input[CONF_MQTT_PASSWORD],
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    },
+                )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_MQTT_USER,
+                        default=current_data.get(CONF_MQTT_USER, DEFAULT_MQTT_USER),
+                    ): str,
+                    vol.Required(
+                        CONF_MQTT_PASSWORD,
+                        default=current_data.get(CONF_MQTT_PASSWORD, ""),
+                    ): str,
+                    vol.Required(
+                        CONF_USERNAME,
+                        default=current_data.get(CONF_USERNAME, ""),
+                    ): str,
+                    vol.Required(
+                        CONF_PASSWORD,
+                        default=current_data.get(CONF_PASSWORD, ""),
+                    ): str,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reauth_confirm_vedo(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Reauthenticate a Comelit Vedo entry."""
+        errors: dict[str, str] = {}
+        config_entry = self._get_reauth_entry()
+        current_data = dict(config_entry.data)
+
+        if user_input is not None:
+            updated_data = {
+                **current_data,
+                CONF_PASSWORD: user_input[CONF_PASSWORD],
+            }
+            try:
+                await validate_vedo_connection(self.hass, updated_data)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                await self.async_set_unique_id(f"comelit_vedo_{current_data[CONF_HOST]}")
+                self._abort_if_unique_id_mismatch(reason="wrong_device")
+                return self.async_update_reload_and_abort(
+                    config_entry,
+                    data_updates={CONF_PASSWORD: user_input[CONF_PASSWORD]},
+                )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_PASSWORD,
+                        default=current_data.get(CONF_PASSWORD, ""),
+                    ): str,
+                }
+            ),
             errors=errors,
         )
 

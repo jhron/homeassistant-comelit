@@ -286,3 +286,77 @@ async def test_vedo_reconfigure_updates_existing_entry() -> None:
             "password": "123456",
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_hub_reauth_updates_existing_entry_credentials() -> None:
+    flow = ComelitConfigFlow()
+    flow.hass = _mock_hass()
+    flow.context = {"source": "reauth"}
+    entry = _mock_hub_entry()
+    flow._get_reauth_entry = MagicMock(return_value=entry)
+    flow.async_set_unique_id = AsyncMock()
+    flow._abort_if_unique_id_mismatch = MagicMock()
+    flow.async_update_reload_and_abort = MagicMock(
+        return_value={"type": "abort", "reason": "reauth_successful"}
+    )
+
+    user_input = {
+        CONF_MQTT_USER: "new-hsrv-user",
+        CONF_MQTT_PASSWORD: "new-mqtt-password",
+        "username": "new-user",
+        "password": "new-hub-password",
+    }
+
+    with patch(
+        "custom_components.comelit.config_flow.validate_hub_connection",
+        new=AsyncMock(return_value={"title": "Comelit Hub (127.0.0.1)"}),
+    ):
+        result = await flow.async_step_reauth(dict(entry.data))
+        assert result["type"] == "form"
+
+        result = await flow.async_step_reauth_confirm(user_input)
+
+    assert result["reason"] == "reauth_successful"
+    flow.async_set_unique_id.assert_awaited_once_with("comelit_hub_00000000")
+    flow._abort_if_unique_id_mismatch.assert_called_once_with(reason="wrong_device")
+    flow.async_update_reload_and_abort.assert_called_once_with(
+        entry,
+        data_updates={
+            CONF_MQTT_USER: "new-hsrv-user",
+            CONF_MQTT_PASSWORD: "new-mqtt-password",
+            "username": "new-user",
+            "password": "new-hub-password",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_vedo_reauth_updates_existing_entry_password() -> None:
+    flow = ComelitConfigFlow()
+    flow.hass = _mock_hass()
+    flow.context = {"source": "reauth"}
+    entry = _mock_vedo_entry()
+    flow._get_reauth_entry = MagicMock(return_value=entry)
+    flow.async_set_unique_id = AsyncMock()
+    flow._abort_if_unique_id_mismatch = MagicMock()
+    flow.async_update_reload_and_abort = MagicMock(
+        return_value={"type": "abort", "reason": "reauth_successful"}
+    )
+
+    with patch(
+        "custom_components.comelit.config_flow.validate_vedo_connection",
+        new=AsyncMock(return_value={"title": "Comelit Vedo (127.0.0.1)"}),
+    ):
+        result = await flow.async_step_reauth(dict(entry.data))
+        assert result["type"] == "form"
+
+        result = await flow.async_step_reauth_confirm({"password": "654321"})
+
+    assert result["reason"] == "reauth_successful"
+    flow.async_set_unique_id.assert_awaited_once_with("comelit_vedo_127.0.0.1")
+    flow._abort_if_unique_id_mismatch.assert_called_once_with(reason="wrong_device")
+    flow.async_update_reload_and_abort.assert_called_once_with(
+        entry,
+        data_updates={"password": "654321"},
+    )
