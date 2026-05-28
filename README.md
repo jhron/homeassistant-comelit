@@ -12,9 +12,10 @@
 [![License](https://img.shields.io/github/license/gicamm/homeassistant-comelit.svg?style=flat-square)](LICENSE)
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=gicamm&repository=homeassistant-comelit&category=integration)
 
-Comelit SimpleHome and Comelit Vedo integration lets you connect your Home Assistant instance to Comelit Simple Home and
-Vedo
+Comelit SimpleHome and Comelit Vedo integration lets you connect Home Assistant to Comelit SimpleHome Hub and Vedo alarm
 systems.
+
+The integration is fully asynchronous and configured through Home Assistant config flows.
 
 For more information, see the [Wiki](https://github.com/gicamm/homeassistant-comelit/wiki).
 
@@ -57,8 +58,15 @@ Detailed climate debug logging is intended for temporary troubleshooting while c
 behavior. Disable it after collecting logs to avoid noisy Home Assistant logs.
 
 Comelit Vedo panels do not reliably expose a stable serial number or MAC address through the HTTP API used by this
-integration. The config flow prevents duplicate entries by host address, while child entity unique IDs are based on the
-Home Assistant config entry ID so entity IDs do not change when the host is reconfigured.
+integration. The config flow prevents duplicate entries by host address, while Vedo child devices are identified by the
+Home Assistant config entry ID so they remain attached to the same integration entry when the host is reconfigured.
+
+### Upgrade notes
+
+Vedo child device identifiers changed from the older `vedo_zone_<id>` / `vedo_area_<id>` format to identifiers based on
+the Home Assistant config entry ID. Entity unique IDs are not intentionally changed, so existing entity IDs should remain
+stable. Home Assistant may, however, create new Vedo device registry entries after upgrade. If you use automations or
+dashboards that target devices directly instead of entities, review those references after upgrading.
 
 ### Development and testing
 
