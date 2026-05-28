@@ -117,6 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
             ) from err
 
         hass.data[DOMAIN][entry.entry_id] = vedo
+        vedo.entry_id = entry.entry_id
         entry.runtime_data = vedo
 
         try:

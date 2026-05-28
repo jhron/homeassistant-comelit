@@ -30,14 +30,23 @@ async def async_setup_entry(
 class VedoAlarm(ComelitDevice, AlarmControlPanelEntity):
     """Representation of a Vedo alarm panel."""
 
-    def __init__(self, id: int, description: str, state, vedo) -> None:
+    def __init__(
+        self,
+        id: int,
+        description: str,
+        state,
+        vedo,
+        *,
+        parent_id: str | None = None,
+    ) -> None:
         """Initialize the alarm panel."""
+        device_id = f"{parent_id}-area-{id}" if parent_id else f"vedo-area-{id}"
         ComelitDevice.__init__(
             self,
             str(id),
             "vedo",
             description,
-            device_id=f"vedo_area_{id}",
+            device_id=device_id,
             entity_name=None,
             model="Vedo Area",
         )

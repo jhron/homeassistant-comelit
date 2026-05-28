@@ -31,18 +31,28 @@ async def async_setup_entry(
 class VedoSensor(ComelitDevice, BinarySensorEntity):
     """Representation of a Vedo motion sensor."""
 
-    def __init__(self, id: int, description: str, state: str) -> None:
+    def __init__(
+        self,
+        id: int,
+        description: str,
+        state: str,
+        *,
+        parent_id: str | None = None,
+        zone_type: str | None = None,
+    ) -> None:
         """Initialize the sensor."""
+        device_id = f"{parent_id}-zone-{id}" if parent_id else f"vedo-zone-{id}"
         ComelitDevice.__init__(
             self,
             str(id),
             "vedo",
             description,
-            device_id=f"vedo_zone_{id}",
+            device_id=device_id,
             entity_name=None,
             model="Vedo Zone",
         )
         self._state = state
+        self._zone_type = zone_type
 
     @property
     def is_on(self) -> bool:
@@ -50,6 +60,8 @@ class VedoSensor(ComelitDevice, BinarySensorEntity):
         return self._state == STATE_ON
 
     @property
-    def device_class(self) -> BinarySensorDeviceClass:
+    def device_class(self) -> BinarySensorDeviceClass | None:
         """Return the device class."""
-        return BinarySensorDeviceClass.MOTION
+        if self._zone_type == "motion":
+            return BinarySensorDeviceClass.MOTION
+        return None

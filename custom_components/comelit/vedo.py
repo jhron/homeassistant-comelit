@@ -50,6 +50,7 @@ class ComelitVedo:
         self.port = port
         self.password = password
         self.scan_interval = scan_interval
+        self.entry_id: str | None = None
 
         self._session: aiohttp.ClientSession | None = None
         self._uid: str | None = None
@@ -305,7 +306,7 @@ class ComelitVedo:
 
         if sensor_id not in self.sensors:
             if self.binary_sensor_add_entities:
-                sensor = VedoSensor(sensor_id, name, state)
+                sensor = VedoSensor(sensor_id, name, state, parent_id=self.entry_id)
                 self.binary_sensor_add_entities([sensor])
                 self.sensors[sensor_id] = sensor
                 _LOGGER.debug("Added binary sensor: %s", name)
@@ -329,7 +330,7 @@ class ComelitVedo:
 
         if area_id not in self.areas:
             if self.alarm_add_entities:
-                alarm = VedoAlarm(area_id, name, state, self)
+                alarm = VedoAlarm(area_id, name, state, self, parent_id=self.entry_id)
                 self.alarm_add_entities([alarm])
                 self.areas[area_id] = alarm
                 _LOGGER.debug("Added alarm area: %s", name)
