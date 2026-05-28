@@ -563,7 +563,7 @@ class ComelitHub:
 
         try:
             if HubClasses.POWER_CONSUMPTION in entity_id or HubClasses.FTV in entity_id:
-                value = format(float(data[HubFields.INSTANT_POWER]), ".2f")
+                value = round(float(data[HubFields.INSTANT_POWER]), 2)
                 prod = data.get(HubFields.PRODUCTION) == "1"
                 sensor = PowerSensor(entity_id, description, value, prod)
             else:
@@ -574,8 +574,9 @@ class ComelitHub:
                 if data.get("type") == 9 and data.get("sub_type") == 16:
                     humidity = data.get(HubFields.HUMIDITY)
                     if humidity is not None:
-                        humidity_sensor = HumiditySensor(entity_id, description, humidity)
-                        await self._async_add_or_update_sensor(humidity_sensor, humidity)
+                        humidity_value = float(humidity)
+                        humidity_sensor = HumiditySensor(entity_id, description, humidity_value)
+                        await self._async_add_or_update_sensor(humidity_sensor, humidity_value)
 
             await self._async_add_or_update_sensor(sensor, value)
 

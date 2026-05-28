@@ -99,3 +99,40 @@ async def test_update_entities_yields_during_large_batches() -> None:
         await hub._async_update_entities(elements)
 
     mock_sleep.assert_awaited_once_with(0)
+
+
+@pytest.mark.asyncio
+async def test_hub_power_sensor_uses_float_native_value() -> None:
+    hub = _make_hub()
+    added: list = []
+    hub.sensor_add_entities = added.extend
+
+    await hub._async_update_sensor(
+        "DOM#CN#1",
+        {"descrizione": "Main", "instant_power": "2244.000000", "prod": "0"},
+    )
+
+    assert added[0].native_value == 2244.0
+    assert isinstance(added[0].native_value, float)
+
+
+@pytest.mark.asyncio
+async def test_hub_humidity_sensor_uses_float_native_value() -> None:
+    hub = _make_hub()
+    added: list = []
+    hub.sensor_add_entities = added.extend
+
+    await hub._async_update_sensor(
+        "DOM#CL#1",
+        {
+            "descrizione": "Living",
+            "temperatura": "210",
+            "umidita": "50",
+            "type": 9,
+            "sub_type": 16,
+        },
+    )
+
+    humidity = next(sensor for sensor in added if sensor.unique_id.endswith("_humidity_DOM#CL#1"))
+    assert humidity.native_value == 50.0
+    assert isinstance(humidity.native_value, float)
