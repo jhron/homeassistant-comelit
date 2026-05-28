@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .comelit_device import ComelitDevice
+from .vedo_coordinator import ALARM_AREA
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,9 +23,30 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Comelit Vedo alarm panels."""
-    vedo = entry.runtime_data
-    vedo.alarm_add_entities = async_add_entities
+    coordinator = entry.runtime_data
+    areas = (coordinator.data or {}).get(ALARM_AREA, {})
+    async_add_entities(
+        VedoAlarm(
+            area["id"],
+            area["name"],
+            _state_from_armed_value(area["armed"]),
+            coordinator.api,
+            parent_id=entry.entry_id,
+        )
+        for area in areas.values()
+    )
     _LOGGER.debug("Comelit Vedo Alarm Integration started")
+
+
+def _state_from_armed_value(armed: int):
+    """Convert Vedo armed value to Home Assistant alarm state."""
+    from homeassistant.components.alarm_control_panel import AlarmControlPanelState
+
+    if armed == 4:
+        return AlarmControlPanelState.ARMED_AWAY
+    if armed == 1:
+        return AlarmControlPanelState.ARMED_NIGHT
+    return AlarmControlPanelState.DISARMED
 
 
 class VedoAlarm(ComelitDevice, AlarmControlPanelEntity):

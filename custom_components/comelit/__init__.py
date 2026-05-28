@@ -30,10 +30,11 @@ from .const import (
 from .exception import ComelitAuthError, ComelitConnectionError
 from .hub import ComelitHub
 from .vedo import ComelitVedo
+from .vedo_coordinator import ComelitVedoCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-type ComelitConfigEntry = ConfigEntry[ComelitHub | ComelitVedo]
+type ComelitConfigEntry = ConfigEntry[ComelitHub | ComelitVedoCoordinator]
 
 
 def _get_scan_interval(entry: ConfigEntry) -> int:
@@ -116,16 +117,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
                 f"Unable to connect to Comelit Vedo at {entry.data[CONF_HOST]}"
             ) from err
 
-        hass.data[DOMAIN][entry.entry_id] = vedo
         vedo.entry_id = entry.entry_id
-        entry.runtime_data = vedo
+        coordinator = ComelitVedoCoordinator(
+            hass=hass,
+            api=vedo,
+            entry=entry,
+            scan_interval=_get_scan_interval(entry),
+        )
+
+        await coordinator.async_config_entry_first_refresh()
+
+        hass.data[DOMAIN][entry.entry_id] = coordinator
+        entry.runtime_data = coordinator
 
         try:
             await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_VEDO)
         except Exception:
             hass.data[DOMAIN].pop(entry.entry_id, None)
             entry.runtime_data = None
-            await vedo.async_disconnect()
+            await coordinator.async_disconnect()
             raise
         _LOGGER.info("Comelit Vedo integration started")
 

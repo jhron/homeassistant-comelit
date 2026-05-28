@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -7,6 +8,7 @@ from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 
 from custom_components.comelit.exception import ComelitCommandError
 from custom_components.comelit.vedo import ComelitVedo
+from custom_components.comelit.vedo_coordinator import ComelitVedoCoordinator
 
 
 def _make_vedo() -> ComelitVedo:
@@ -121,3 +123,22 @@ async def test_vedo_async_connect_uses_ha_created_client_session() -> None:
     create_session.assert_called_once()
     assert create_session.call_args.args == (vedo.hass,)
     assert vedo._session is session
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_refresh_returns_zone_and_area_snapshot() -> None:
+    coordinator = ComelitVedoCoordinator(
+        hass=MagicMock(),
+        api=MagicMock(),
+        entry=SimpleNamespace(entry_id="entry-id"),
+        scan_interval=30,
+    )
+    coordinator.api.login = AsyncMock()
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        return_value={"alarm_zone": {1: MagicMock(index=1)}, "alarm_area": {1: MagicMock(index=1)}}
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert set(data) == {"alarm_zone", "alarm_area"}
+    coordinator.api.login.assert_awaited_once()

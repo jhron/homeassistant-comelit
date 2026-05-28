@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .exception import ComelitAuthError, ComelitCommandError, ComelitConnectionError
+from .vedo_coordinator import ALARM_AREA, ALARM_ZONE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,9 +55,7 @@ class ComelitVedo:
 
         self._session: aiohttp.ClientSession | None = None
         self._uid: str | None = None
-        self._connected = False
         self._entities_available = True
-        self._update_task: asyncio.Task | None = None
 
         # Entity storage
         self.sensors: dict[str, Any] = {}
@@ -75,33 +74,10 @@ class ComelitVedo:
             timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
         )
 
-        try:
-            self._uid = await self._async_login()
-        except Exception:
-            await self._session.close()
-            self._session = None
-            raise
-
-        self._connected = True
-
-        # Start update task
-        self._update_task = self.hass.async_create_background_task(
-            self._async_updater(), "comelit_vedo_update"
-        )
-
         _LOGGER.info("Connected to Comelit Vedo")
 
     async def async_disconnect(self) -> None:
         """Disconnect from Vedo."""
-        self._connected = False
-
-        if self._update_task:
-            self._update_task.cancel()
-            try:
-                await self._update_task
-            except asyncio.CancelledError:
-                pass
-
         await self._async_logout()
 
         if self._session:
@@ -171,6 +147,10 @@ class ComelitVedo:
 
         self._uid = None
 
+    async def login(self) -> None:
+        """Log in and store the current Vedo session cookie."""
+        self._uid = await self._async_login()
+
     async def _async_get(self, path: str, parse_json: bool = True) -> Any:
         """GET request to Vedo."""
         if not self._session or not self._uid:
@@ -190,94 +170,63 @@ class ComelitVedo:
             _LOGGER.error("GET request failed: %s", err)
             raise
 
-    async def _async_updater(self) -> None:
-        """Periodically update sensor states."""
-        while self._connected:
-            try:
-                if self._uid is None:
-                    try:
-                        self._uid = await self._async_login()
-                    except ComelitAuthError as err:
-                        _LOGGER.error("Vedo authentication failed: %s", err)
-                        self._set_entities_available(False)
-                        await asyncio.sleep(self.scan_interval)
-                        continue
-                    except ComelitConnectionError as err:
-                        _LOGGER.warning("Vedo reconnect failed: %s", err)
-                        self._set_entities_available(False)
-                        await asyncio.sleep(self.scan_interval)
-                        continue
+    async def get_all_areas_and_zones(self) -> dict[str, dict[int, dict[str, Any]]]:
+        """Fetch all Vedo areas and zones as a single snapshot."""
+        zone_desc = await self._async_get(VedoRequest.ZONE_DESC)
+        zone_status = await self._async_get(VedoRequest.ZONE_STAT)
+        areas_desc = await self._async_get(VedoRequest.AREA_DESC)
+        areas_stat = await self._async_get(VedoRequest.AREA_STAT)
 
-                # Get zone and area data
-                zone_desc = await self._async_get(VedoRequest.ZONE_DESC)
-                zone_status = await self._async_get(VedoRequest.ZONE_STAT)
-                areas_desc = await self._async_get(VedoRequest.AREA_DESC)
-                areas_stat = await self._async_get(VedoRequest.AREA_STAT)
+        if not all([zone_desc, zone_status, areas_desc, areas_stat]):
+            raise ComelitConnectionError("Failed to get Vedo data")
 
-                if not all([zone_desc, zone_status, areas_desc, areas_stat]):
-                    raise Exception("Failed to get data")
+        zones: dict[int, dict[str, Any]] = {}
+        description = zone_desc.get("description", [])
+        zone_statuses = zone_status.get("status", "").split(",")
+        in_area = zone_desc.get("in_area", [])
 
-                # Process zones (binary sensors)
-                description = zone_desc.get("description", [])
-                zone_statuses = zone_status.get("status", "").split(",")
-                in_area = zone_desc.get("in_area", [])
-
-                if len(in_area) == len(zone_statuses):
-                    for i, value in enumerate(in_area):
-                        if value == "Not logged":
-                            raise CookieExpired("Cookie expired")
-                        if value != 0:
-                            sensor_data = {
-                                "id": i,
-                                "name": description[i] if i < len(description) else f"Zone {i}",
-                                "status": zone_statuses[i] if i < len(zone_statuses) else "0",
-                            }
-                            await self._async_update_sensor(sensor_data)
-
-                # Process areas (alarm panels)
-                descs = areas_desc.get("description", [])
-                armed = areas_stat.get("armed", [])
-                p1_pres = areas_desc.get("p1_pres", [])
-                p2_pres = areas_desc.get("p2_pres", [])
-                ready = areas_stat.get("ready", [])
-                alarm = areas_stat.get("alarm", [])
-                alarm_memory = areas_stat.get("alarm_memory", [])
-                sabotage = areas_stat.get("sabotage", [])
-                anomaly = areas_stat.get("anomaly", [])
-                in_time = areas_stat.get("in_time", [])
-                out_time = areas_stat.get("out_time", [])
-
-                for i, name in enumerate(descs):
-                    area_data = {
+        if len(in_area) == len(zone_statuses):
+            for i, value in enumerate(in_area):
+                if value == "Not logged":
+                    raise ComelitAuthError("Vedo cookie expired")
+                if value != 0:
+                    zones[i] = {
                         "id": i,
-                        "name": name,
-                        "armed": armed[i] if i < len(armed) else 0,
-                        "p1_pres": p1_pres[i] if i < len(p1_pres) else 0,
-                        "p2_pres": p2_pres[i] if i < len(p2_pres) else 0,
-                        "ready": ready[i] if i < len(ready) else 0,
-                        "alarm": alarm[i] if i < len(alarm) else 0,
-                        "alarm_memory": alarm_memory[i] if i < len(alarm_memory) else 0,
-                        "sabotage": sabotage[i] if i < len(sabotage) else 0,
-                        "anomaly": anomaly[i] if i < len(anomaly) else 0,
-                        "in_time": in_time[i] if i < len(in_time) else 0,
-                        "out_time": out_time[i] if i < len(out_time) else 0,
+                        "name": description[i] if i < len(description) else f"Zone {i}",
+                        "status": zone_statuses[i] if i < len(zone_statuses) else "0",
                     }
-                    await self._async_update_area(area_data)
 
-                self._set_entities_available(True)
+        areas: dict[int, dict[str, Any]] = {}
+        descs = areas_desc.get("description", [])
+        armed = areas_stat.get("armed", [])
+        p1_pres = areas_desc.get("p1_pres", [])
+        p2_pres = areas_desc.get("p2_pres", [])
+        ready = areas_stat.get("ready", [])
+        alarm = areas_stat.get("alarm", [])
+        alarm_memory = areas_stat.get("alarm_memory", [])
+        sabotage = areas_stat.get("sabotage", [])
+        anomaly = areas_stat.get("anomaly", [])
+        in_time = areas_stat.get("in_time", [])
+        out_time = areas_stat.get("out_time", [])
 
-            except CookieExpired:
-                _LOGGER.debug("Cookie expired, re-logging")
-                self._set_entities_available(False)
-                await self._async_logout()
-                self._uid = None
-            except Exception as err:
-                _LOGGER.error("Update error: %s", err)
-                self._set_entities_available(False)
-                await self._async_logout()
-                self._uid = None
+        for i, name in enumerate(descs):
+            areas[i] = {
+                "id": i,
+                "name": name,
+                "armed": armed[i] if i < len(armed) else 0,
+                "p1_pres": p1_pres[i] if i < len(p1_pres) else 0,
+                "p2_pres": p2_pres[i] if i < len(p2_pres) else 0,
+                "ready": ready[i] if i < len(ready) else 0,
+                "alarm": alarm[i] if i < len(alarm) else 0,
+                "alarm_memory": alarm_memory[i] if i < len(alarm_memory) else 0,
+                "sabotage": sabotage[i] if i < len(sabotage) else 0,
+                "anomaly": anomaly[i] if i < len(anomaly) else 0,
+                "in_time": in_time[i] if i < len(in_time) else 0,
+                "out_time": out_time[i] if i < len(out_time) else 0,
+            }
 
-            await asyncio.sleep(self.scan_interval)
+        self._set_entities_available(True)
+        return {ALARM_ZONE: zones, ALARM_AREA: areas}
 
     def _set_entities_available(self, available: bool) -> None:
         """Update Vedo entity availability once per transition."""

@@ -8,11 +8,12 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_ON
+from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .comelit_device import ComelitDevice
+from .vedo_coordinator import ALARM_ZONE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,8 +24,17 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Comelit Vedo binary sensors."""
-    vedo = entry.runtime_data
-    vedo.binary_sensor_add_entities = async_add_entities
+    coordinator = entry.runtime_data
+    zones = (coordinator.data or {}).get(ALARM_ZONE, {})
+    async_add_entities(
+        VedoSensor(
+            zone["id"],
+            zone["name"],
+            STATE_ON if (int(zone["status"], 16) & 1) != 0 else STATE_OFF,
+            parent_id=entry.entry_id,
+        )
+        for zone in zones.values()
+    )
     _LOGGER.debug("Comelit Vedo Binary Sensor Integration started")
 
 

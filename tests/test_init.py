@@ -92,14 +92,19 @@ async def test_async_setup_entry_vedo_success_sets_runtime_data() -> None:
     hass = _mock_hass()
     entry = _mock_vedo_entry()
 
-    with patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls:
+    with (
+        patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls,
+        patch("custom_components.comelit.ComelitVedoCoordinator") as mock_coordinator_cls,
+    ):
         mock_vedo = mock_vedo_cls.return_value
         mock_vedo.async_connect = AsyncMock()
+        mock_coordinator = mock_coordinator_cls.return_value
+        mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
         assert await async_setup_entry(hass, entry) is True
 
-    assert hass.data[DOMAIN][entry.entry_id] is mock_vedo
-    assert entry.runtime_data is mock_vedo
+    assert hass.data[DOMAIN][entry.entry_id] is mock_coordinator
+    assert entry.runtime_data is mock_coordinator
     hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
         entry, PLATFORMS_VEDO
     )
@@ -131,15 +136,20 @@ async def test_async_setup_entry_vedo_cleans_up_when_forward_setup_fails() -> No
     entry = _mock_vedo_entry()
     hass.config_entries.async_forward_entry_setups = AsyncMock(side_effect=RuntimeError("boom"))
 
-    with patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls:
+    with (
+        patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls,
+        patch("custom_components.comelit.ComelitVedoCoordinator") as mock_coordinator_cls,
+    ):
         mock_vedo = mock_vedo_cls.return_value
         mock_vedo.async_connect = AsyncMock()
-        mock_vedo.async_disconnect = AsyncMock()
+        mock_coordinator = mock_coordinator_cls.return_value
+        mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+        mock_coordinator.async_disconnect = AsyncMock()
 
         with pytest.raises(RuntimeError, match="boom"):
             await async_setup_entry(hass, entry)
 
-    mock_vedo.async_disconnect.assert_awaited_once()
+    mock_coordinator.async_disconnect.assert_awaited_once()
     assert entry.entry_id not in hass.data[DOMAIN]
 
 
