@@ -14,6 +14,7 @@ from custom_components.comelit.alarm_control_panel import (
     async_setup_entry as async_setup_alarm_entry,
 )
 from custom_components.comelit.binary_sensor import async_setup_entry as async_setup_binary_sensor_entry
+from custom_components.comelit.binary_sensor import VedoSensor
 from custom_components.comelit.climate import async_setup_entry as async_setup_climate_entry
 from custom_components.comelit.cover import async_setup_entry as async_setup_cover_entry
 from custom_components.comelit.light import async_setup_entry as async_setup_light_entry
@@ -112,6 +113,36 @@ def test_vedo_alarm_properties_expose_supported_state() -> None:
         | AlarmControlPanelEntityFeature.ARM_NIGHT
     )
     assert alarm.code_arm_required is False
+
+
+def test_vedo_entities_read_updated_coordinator_data() -> None:
+    coordinator = MagicMock()
+    coordinator.api = MagicMock()
+    coordinator.data = {
+        ALARM_AREA: {1: {"id": 1, "name": "Area 1", "armed": 4}},
+        ALARM_ZONE: {1: {"id": 1, "name": "Zone 1", "status": "0000"}},
+    }
+    alarm = VedoAlarm(
+        1,
+        "Area 1",
+        AlarmControlPanelState.ARMED_AWAY,
+        coordinator.api,
+        parent_id="entry-id",
+        coordinator=coordinator,
+    )
+    sensor = VedoSensor(
+        1,
+        "Zone 1",
+        "off",
+        parent_id="entry-id",
+        coordinator=coordinator,
+    )
+
+    coordinator.data[ALARM_AREA][1]["armed"] = 0
+    coordinator.data[ALARM_ZONE][1]["status"] = "0011"
+
+    assert alarm.alarm_state is AlarmControlPanelState.DISARMED
+    assert sensor.is_on is True
 
 
 @pytest.mark.asyncio

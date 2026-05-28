@@ -10,6 +10,7 @@ from homeassistant.components.alarm_control_panel import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .comelit_device import ComelitDevice
 from .vedo_coordinator import ALARM_AREA
@@ -32,6 +33,7 @@ async def async_setup_entry(
             _state_from_armed_value(area["armed"]),
             coordinator.api,
             parent_id=entry.entry_id,
+            coordinator=coordinator,
         )
         for area in areas.values()
     )
@@ -49,7 +51,7 @@ def _state_from_armed_value(armed: int):
     return AlarmControlPanelState.DISARMED
 
 
-class VedoAlarm(ComelitDevice, AlarmControlPanelEntity):
+class VedoAlarm(CoordinatorEntity, ComelitDevice, AlarmControlPanelEntity):
     """Representation of a Vedo alarm panel."""
 
     def __init__(
@@ -60,8 +62,11 @@ class VedoAlarm(ComelitDevice, AlarmControlPanelEntity):
         vedo,
         *,
         parent_id: str | None = None,
+        coordinator=None,
     ) -> None:
         """Initialize the alarm panel."""
+        if coordinator is not None:
+            CoordinatorEntity.__init__(self, coordinator)
         device_id = f"{parent_id}-area-{id}" if parent_id else f"vedo-area-{id}"
         ComelitDevice.__init__(
             self,
@@ -72,12 +77,17 @@ class VedoAlarm(ComelitDevice, AlarmControlPanelEntity):
             entity_name=None,
             model="Vedo Area",
         )
+        self._numeric_id = id
         self._vedo = vedo
         self._state = state
 
     @property
     def alarm_state(self):
         """Return the current alarm state."""
+        if hasattr(self, "coordinator") and self.coordinator.data:
+            area = self.coordinator.data.get(ALARM_AREA, {}).get(self._numeric_id)
+            if area is not None:
+                return _state_from_armed_value(area["armed"])
         return self._state
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:

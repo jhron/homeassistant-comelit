@@ -125,12 +125,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
             scan_interval=_get_scan_interval(entry),
         )
 
-        await coordinator.async_config_entry_first_refresh()
-
         hass.data[DOMAIN][entry.entry_id] = coordinator
         entry.runtime_data = coordinator
 
         try:
+            await coordinator.async_config_entry_first_refresh()
             await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_VEDO)
         except Exception:
             hass.data[DOMAIN].pop(entry.entry_id, None)

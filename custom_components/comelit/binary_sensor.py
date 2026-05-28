@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .comelit_device import ComelitDevice
 from .vedo_coordinator import ALARM_ZONE
@@ -32,13 +33,14 @@ async def async_setup_entry(
             zone["name"],
             STATE_ON if (int(zone["status"], 16) & 1) != 0 else STATE_OFF,
             parent_id=entry.entry_id,
+            coordinator=coordinator,
         )
         for zone in zones.values()
     )
     _LOGGER.debug("Comelit Vedo Binary Sensor Integration started")
 
 
-class VedoSensor(ComelitDevice, BinarySensorEntity):
+class VedoSensor(CoordinatorEntity, ComelitDevice, BinarySensorEntity):
     """Representation of a Vedo motion sensor."""
 
     def __init__(
@@ -49,8 +51,11 @@ class VedoSensor(ComelitDevice, BinarySensorEntity):
         *,
         parent_id: str | None = None,
         zone_type: str | None = None,
+        coordinator=None,
     ) -> None:
         """Initialize the sensor."""
+        if coordinator is not None:
+            CoordinatorEntity.__init__(self, coordinator)
         device_id = f"{parent_id}-zone-{id}" if parent_id else f"vedo-zone-{id}"
         ComelitDevice.__init__(
             self,
@@ -61,12 +66,17 @@ class VedoSensor(ComelitDevice, BinarySensorEntity):
             entity_name=None,
             model="Vedo Zone",
         )
+        self._numeric_id = id
         self._state = state
         self._zone_type = zone_type
 
     @property
     def is_on(self) -> bool:
         """Return true if motion is detected."""
+        if hasattr(self, "coordinator") and self.coordinator.data:
+            zone = self.coordinator.data.get(ALARM_ZONE, {}).get(self._numeric_id)
+            if zone is not None:
+                return (int(zone["status"], 16) & 1) != 0
         return self._state == STATE_ON
 
     @property

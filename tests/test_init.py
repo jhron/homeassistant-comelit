@@ -154,6 +154,30 @@ async def test_async_setup_entry_vedo_cleans_up_when_forward_setup_fails() -> No
 
 
 @pytest.mark.asyncio
+async def test_async_setup_entry_vedo_cleans_up_when_first_refresh_fails() -> None:
+    hass = _mock_hass()
+    entry = _mock_vedo_entry()
+
+    with (
+        patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls,
+        patch("custom_components.comelit.ComelitVedoCoordinator") as mock_coordinator_cls,
+    ):
+        mock_vedo = mock_vedo_cls.return_value
+        mock_vedo.async_connect = AsyncMock()
+        mock_coordinator = mock_coordinator_cls.return_value
+        mock_coordinator.async_config_entry_first_refresh = AsyncMock(
+            side_effect=RuntimeError("refresh failed")
+        )
+        mock_coordinator.async_disconnect = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="refresh failed"):
+            await async_setup_entry(hass, entry)
+
+    mock_coordinator.async_disconnect.assert_awaited_once()
+    assert entry.entry_id not in hass.data[DOMAIN]
+
+
+@pytest.mark.asyncio
 async def test_async_unload_entry_hub_disconnects_runtime_data() -> None:
     hass = _mock_hass()
     entry = _mock_hub_entry()
