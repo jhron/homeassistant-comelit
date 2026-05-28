@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiomqtt
 import pytest
 
+from custom_components.comelit.exception import ComelitCommandError
 from custom_components.comelit.hub import ComelitHub
 
 
@@ -136,3 +138,26 @@ async def test_hub_humidity_sensor_uses_float_native_value() -> None:
     humidity = next(sensor for sensor in added if sensor.unique_id.endswith("_humidity_DOM#CL#1"))
     assert humidity.native_value == 50.0
     assert isinstance(humidity.native_value, float)
+
+
+@pytest.mark.asyncio
+async def test_hub_publish_without_client_raises_command_error() -> None:
+    hub = _make_hub()
+
+    with pytest.raises(ComelitCommandError, match="MQTT client is not connected"):
+        await hub._async_publish({"req_type": 1})
+
+
+@pytest.mark.asyncio
+async def test_hub_publish_mqtt_error_raises_and_clears_pending_status() -> None:
+    hub = _make_hub()
+    hub._client = MagicMock()
+    hub._client.publish = AsyncMock(side_effect=aiomqtt.MqttError("offline"))
+    hub._status_request_pending = True
+    hub._schedule_reconnect = MagicMock()
+
+    with pytest.raises(ComelitCommandError, match="Failed to publish"):
+        await hub._async_publish({"req_type": 0})
+
+    assert hub._status_request_pending is False
+    hub._schedule_reconnect.assert_called_once()

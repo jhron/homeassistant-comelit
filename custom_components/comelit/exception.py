@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from homeassistant.exceptions import HomeAssistantError
+
 
 class ComelitError(Exception):
     """Base Comelit exception."""
+
+
+class ComelitCommandError(HomeAssistantError, ComelitError):
+    """Raised when a Comelit command cannot be sent."""
 
 
 class ComelitConnectionError(ComelitError):

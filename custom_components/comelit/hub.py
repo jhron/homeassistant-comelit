@@ -22,7 +22,7 @@ from homeassistant.const import (
 from homeassistant.components.climate import HVACMode
 from homeassistant.core import HomeAssistant
 
-from .exception import ComelitAuthError, ComelitConnectionError
+from .exception import ComelitAuthError, ComelitCommandError, ComelitConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -398,7 +398,8 @@ class ComelitHub:
     async def _async_publish(self, data: dict[str, Any]) -> None:
         """Publish a message to the hub."""
         if not self._client:
-            return
+            self._status_request_pending = False
+            raise ComelitCommandError("Comelit MQTT client is not connected")
 
         data["seq_id"] = self.sequence_id
         data["agent_id"] = self.agent_id
@@ -408,7 +409,9 @@ class ComelitHub:
             await self._client.publish(self.topic_rx, json.dumps(data))
             self.sequence_id += 1
         except aiomqtt.MqttError as err:
+            self._status_request_pending = False
             self._schedule_reconnect(f"publish failed: {err}")
+            raise ComelitCommandError(f"Failed to publish Comelit command: {err}") from err
 
     async def _async_dispatch(self, payload: dict[str, Any]) -> None:
         """Dispatch incoming messages."""
