@@ -45,8 +45,16 @@ After the integration is added, Home Assistant exposes three different flows:
 - `Reauthenticate`
   - Update credentials after an authentication failure without removing and re-adding the integration
 
-Comelit Hub uses MQTT as transport, but the protocol behaves as request/response. The integration therefore uses
-local polling instead of relying on unsolicited push updates.
+### Polling and scan interval
+
+The integration uses local polling. Comelit Hub communicates over MQTT, but the integration sends request/response
+status requests instead of relying on unsolicited push updates. Comelit Vedo is polled over HTTP.
+
+The default `scan_interval` is suitable for normal use. Lower values can make Home Assistant show changes sooner, but
+they also increase traffic to the panel and should be used only when the panel remains responsive.
+
+Detailed climate debug logging is intended for temporary troubleshooting while confirming Comelit mode and season
+behavior. Disable it after collecting logs to avoid noisy Home Assistant logs.
 
 Comelit Vedo panels do not reliably expose a stable serial number or MAC address through the HTTP API used by this
 integration. The config flow prevents duplicate entries by host address, while child entity unique IDs are based on the
@@ -67,6 +75,12 @@ docker compose -f .devcontainer/docker-compose.yml up -d homeassistant
 
 ```bash
 docker compose -f .devcontainer/docker-compose.yml run --rm pytest pytest
+```
+
+- Run lint checks:
+
+```bash
+docker compose -f .devcontainer/docker-compose.yml run --rm pytest ruff check .
 ```
 
 The checked-in dev config lives in [`.devcontainer/config/configuration.yaml`](./.devcontainer/config/configuration.yaml).
