@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfPower, UnitOfTemperature
 from homeassistant.core import HomeAssistant
@@ -38,6 +42,7 @@ class ComelitSensor(ComelitDevice, SensorEntity):
         icon: str,
         unit_of_measurement: str,
         device_class: SensorDeviceClass | None,
+        state_class: SensorStateClass | None = None,
         *,
         device_id: str | None = None,
         model: str | None = None,
@@ -57,6 +62,7 @@ class ComelitSensor(ComelitDevice, SensorEntity):
         self._state = state
         self._unit_of_measurement = unit_of_measurement
         self._device_class = device_class
+        self._attr_state_class = state_class
 
     @property
     def native_unit_of_measurement(self) -> str | None:
@@ -101,6 +107,7 @@ class PowerSensor(ComelitSensor):
             icon,
             UnitOfPower.WATT,
             SensorDeviceClass.POWER,
+            SensorStateClass.MEASUREMENT,
             model="SimpleHome Power Meter",
         )
 
@@ -119,6 +126,7 @@ class TemperatureSensor(ComelitSensor):
             "mdi:home-thermometer",
             UnitOfTemperature.CELSIUS,
             SensorDeviceClass.TEMPERATURE,
+            SensorStateClass.MEASUREMENT,
             device_id=id,
             model="SimpleHome Climate Zone",
         )
@@ -138,6 +146,7 @@ class HumiditySensor(ComelitSensor):
             "mdi:water-percent",
             "%",
             SensorDeviceClass.HUMIDITY,
+            SensorStateClass.MEASUREMENT,
             device_id=id,
             model="SimpleHome Climate Zone",
         )
