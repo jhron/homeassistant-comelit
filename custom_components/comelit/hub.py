@@ -30,6 +30,7 @@ HANDSHAKE_TIMEOUT = 15
 RECONNECT_DELAY = 10
 STATUS_STALE_TIMEOUT = 15
 ENTITY_BATCH_YIELD = 10
+REAUTH_TIMEOUT = 30
 
 
 class RequestType:
@@ -118,6 +119,7 @@ class ComelitHub:
         self.sessiontoken = ""
         self._reauth_in_progress = False  # Prevent re-auth loops
         self._last_reauth_time = 0  # Timestamp of last re-auth attempt
+        self._reauth_started_at = 0.0
 
         self.topic_rx = f"HSrv/{hub_serial}/rx/{client_name}"
         self.topic_tx = f"HSrv/{hub_serial}/tx/{client_name}"
@@ -172,6 +174,7 @@ class ComelitHub:
             self._login_error = None
             self.sessiontoken = ""
             self._reauth_in_progress = False
+            self._reauth_started_at = 0.0
 
             self._client = aiomqtt.Client(
                 hostname=self.hub_host,
@@ -244,6 +247,7 @@ class ComelitHub:
         self._login_error = None
         self.sessiontoken = ""
         self._reauth_in_progress = False
+        self._reauth_started_at = 0.0
         self._status_request_pending = False
         self._last_status_request = 0.0
 
@@ -378,6 +382,8 @@ class ComelitHub:
     async def _async_status_updater(self) -> None:
         """Periodically request status updates."""
         while self._connected:
+            self._clear_stale_reauth()
+
             # Only request status if we have a valid token and not re-authenticating
             status_is_stale = (
                 self._status_request_pending
@@ -394,6 +400,18 @@ class ComelitHub:
             ):
                 await self._async_update_status()
             await asyncio.sleep(self.scan_interval)
+
+    def _clear_stale_reauth(self) -> None:
+        """Clear a reauth attempt that did not receive a login response."""
+        if not self._reauth_in_progress:
+            return
+        if (time.monotonic() - self._reauth_started_at) <= REAUTH_TIMEOUT:
+            return
+
+        _LOGGER.warning("Comelit Hub reauthentication timed out")
+        self._reauth_in_progress = False
+        self._reauth_started_at = 0.0
+        self._status_request_pending = False
 
     async def _async_publish(self, data: dict[str, Any]) -> None:
         """Publish a message to the hub."""
@@ -423,6 +441,7 @@ class ComelitHub:
                 _LOGGER.warning("Token expired (seq_id=%s), re-authenticating...", payload.get("seq_id"))
                 self._reauth_in_progress = True
                 self._last_reauth_time = current_time
+                self._reauth_started_at = time.monotonic()
                 self.sessiontoken = ""
                 await self._async_announce()
             else:
@@ -442,6 +461,7 @@ class ComelitHub:
 
             self._handle_token(payload)
             self._reauth_in_progress = False  # Re-auth complete
+            self._reauth_started_at = 0.0
         elif req_type == RequestType.STATUS:
             await self._async_handle_status(payload)
         elif req_type == RequestType.PARAMETERS:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -161,3 +162,14 @@ async def test_hub_publish_mqtt_error_raises_and_clears_pending_status() -> None
 
     assert hub._status_request_pending is False
     hub._schedule_reconnect.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_hub_reauth_watchdog_clears_stuck_reauth() -> None:
+    hub = _make_hub()
+    hub._reauth_in_progress = True
+    hub._reauth_started_at = time.monotonic() - 31
+
+    hub._clear_stale_reauth()
+
+    assert hub._reauth_in_progress is False
