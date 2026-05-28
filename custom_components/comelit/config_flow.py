@@ -17,6 +17,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     DOMAIN,
@@ -117,16 +118,16 @@ async def validate_vedo_connection(hass: HomeAssistant, data: dict[str, Any]) ->
     url = f"http://{data[CONF_HOST]}:{data[CONF_PORT]}/login.cgi"
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url,
-                data={"code": data[CONF_PASSWORD]},
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as response:
-                if response.status != 200:
-                    raise CannotConnect("Invalid response from Vedo")
-                if "set-cookie" not in response.headers:
-                    raise InvalidAuth("Invalid password")
+        session = async_get_clientsession(hass)
+        async with session.post(
+            url,
+            data={"code": data[CONF_PASSWORD]},
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as response:
+            if response.status != 200:
+                raise CannotConnect("Invalid response from Vedo")
+            if "set-cookie" not in response.headers:
+                raise InvalidAuth("Invalid password")
     except aiohttp.ClientError as err:
         _LOGGER.error("Failed to connect to Vedo: %s", err)
         raise CannotConnect from err

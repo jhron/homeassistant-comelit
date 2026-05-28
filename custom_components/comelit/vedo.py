@@ -12,6 +12,7 @@ import aiohttp
 from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 from homeassistant.const import STATE_ON, STATE_OFF
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .exception import ComelitAuthError, ComelitCommandError, ComelitConnectionError
 
@@ -68,7 +69,8 @@ class ComelitVedo:
 
     async def async_connect(self) -> None:
         """Connect to Vedo."""
-        self._session = aiohttp.ClientSession(
+        self._session = async_create_clientsession(
+            self.hass,
             timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
         )
 

@@ -101,3 +101,23 @@ def test_vedo_set_entities_available_updates_sensors_and_areas_once() -> None:
 
     assert sensor.set_available.call_args_list == [call(False), call(True)]
     assert area.set_available.call_args_list == [call(False), call(True)]
+
+
+@pytest.mark.asyncio
+async def test_vedo_async_connect_uses_ha_created_client_session() -> None:
+    vedo = _make_vedo()
+    session = MagicMock()
+    vedo._async_login = AsyncMock(return_value="uid=abc")
+    vedo.hass.async_create_background_task.side_effect = (
+        lambda coroutine, _name: coroutine.close()
+    )
+
+    with patch(
+        "custom_components.comelit.vedo.async_create_clientsession",
+        return_value=session,
+    ) as create_session:
+        await vedo.async_connect()
+
+    create_session.assert_called_once()
+    assert create_session.call_args.args == (vedo.hass,)
+    assert vedo._session is session
