@@ -216,6 +216,7 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            self._async_abort_entries_match({CONF_HOST: user_input[CONF_HOST]})
             try:
                 info = await validate_vedo_connection(self.hass, user_input)
             except CannotConnect:
@@ -227,8 +228,6 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 user_input[CONF_DEVICE_TYPE] = DEVICE_TYPE_VEDO
-                await self.async_set_unique_id(f"comelit_vedo_{user_input[CONF_HOST]}")
-                self._abort_if_unique_id_configured()
                 return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(
@@ -298,6 +297,7 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
         current_data = dict(config_entry.data)
 
         if user_input is not None:
+            self._async_abort_entries_match({CONF_HOST: user_input[CONF_HOST]})
             try:
                 await validate_vedo_connection(self.hass, user_input)
             except CannotConnect:

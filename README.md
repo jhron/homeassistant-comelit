@@ -48,6 +48,10 @@ After the integration is added, Home Assistant exposes three different flows:
 Comelit Hub uses MQTT as transport, but the protocol behaves as request/response. The integration therefore uses
 local polling instead of relying on unsolicited push updates.
 
+Comelit Vedo panels do not reliably expose a stable serial number or MAC address through the HTTP API used by this
+integration. The config flow prevents duplicate entries by host address, while child entity unique IDs are based on the
+Home Assistant config entry ID so entity IDs do not change when the host is reconfigured.
+
 ### Development and testing
 
 This repository includes a dockerized Home Assistant and pytest environment in [`.devcontainer/`](./.devcontainer).
