@@ -16,6 +16,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -160,18 +161,14 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
         auto_man = self._climate_data.get("auto_man", COMELIT_MODE_OFF_6)
         
         if auto_man == COMELIT_MODE_AUTO:
-            _LOGGER.warning(
-                "Cannot set temperature in AUTO mode for %s. Switch to MANUAL first.",
-                self.name
+            raise ServiceValidationError(
+                f"Cannot set temperature in AUTO mode for {self.name}. Switch to MANUAL first."
             )
-            return
         
         if auto_man in (COMELIT_MODE_OFF_5, COMELIT_MODE_OFF_6):
-            _LOGGER.warning(
-                "Cannot set temperature when OFF for %s. Turn on first.",
-                self.name
+            raise ServiceValidationError(
+                f"Cannot set temperature when OFF for {self.name}. Turn on first."
             )
-            return
             
         await self._hub.async_climate_set_temperature(self._id, temperature)
         self._climate_data["target_temperature"] = temperature

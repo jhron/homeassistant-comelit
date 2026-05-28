@@ -5,8 +5,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.const import STATE_CLOSED, STATE_OFF, STATE_ON
+from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.comelit.climate import ComelitClimate
+from custom_components.comelit.climate import (
+    COMELIT_MODE_AUTO,
+    COMELIT_MODE_OFF_6,
+    ComelitClimate,
+)
 from custom_components.comelit.exception import ComelitCommandError
 from custom_components.comelit.hub import ComelitHub
 from custom_components.comelit.cover import ComelitCover
@@ -151,3 +156,33 @@ async def test_climate_does_not_mutate_state_after_failed_hvac_mode() -> None:
 
     assert climate.hvac_mode is HVACMode.OFF
     climate.async_write_ha_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_climate_set_temperature_in_auto_raises_service_validation_error() -> None:
+    hub = MagicMock()
+    hub.enable_climate_debug = False
+    climate = ComelitClimate(
+        "DOM#CL#1",
+        "Living",
+        {"auto_man": COMELIT_MODE_AUTO, "target_temperature": 21.0},
+        hub,
+    )
+
+    with pytest.raises(ServiceValidationError, match="AUTO mode"):
+        await climate.async_set_temperature(temperature=22.0)
+
+
+@pytest.mark.asyncio
+async def test_climate_set_temperature_when_off_raises_service_validation_error() -> None:
+    hub = MagicMock()
+    hub.enable_climate_debug = False
+    climate = ComelitClimate(
+        "DOM#CL#1",
+        "Living",
+        {"auto_man": COMELIT_MODE_OFF_6, "target_temperature": 21.0},
+        hub,
+    )
+
+    with pytest.raises(ServiceValidationError, match="OFF"):
+        await climate.async_set_temperature(temperature=22.0)
