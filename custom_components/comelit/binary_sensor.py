@@ -13,7 +13,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .comelit_device import ComelitDevice
-from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Comelit Vedo binary sensors."""
-    vedo = hass.data[DOMAIN][entry.entry_id]
+    vedo = entry.runtime_data
     vedo.binary_sensor_add_entities = async_add_entities
     _LOGGER.debug("Comelit Vedo Binary Sensor Integration started")
 

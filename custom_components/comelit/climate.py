@@ -19,7 +19,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
 from .comelit_device import ComelitDevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Comelit climate entities."""
-    hub = hass.data[DOMAIN][entry.entry_id]
+    hub = entry.runtime_data
     hub.climate_add_entities = async_add_entities
     _LOGGER.debug("Comelit Climate Integration started")
 

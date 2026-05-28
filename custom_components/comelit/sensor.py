@@ -13,7 +13,6 @@ from homeassistant.const import UnitOfPower, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
 from .comelit_device import ComelitDevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,7 +24,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Comelit sensors."""
-    hub = hass.data[DOMAIN][entry.entry_id]
+    hub = entry.runtime_data
     hub.sensor_add_entities = async_add_entities
     _LOGGER.debug("Comelit Sensor Integration started")
 

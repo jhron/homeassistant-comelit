@@ -11,7 +11,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
 from .comelit_device import ComelitDevice
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,7 +22,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Comelit Vedo alarm panels."""
-    vedo = hass.data[DOMAIN][entry.entry_id]
+    vedo = entry.runtime_data
     vedo.alarm_add_entities = async_add_entities
     _LOGGER.debug("Comelit Vedo Alarm Integration started")
 
