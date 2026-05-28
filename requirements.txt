@@ -2,9 +2,3 @@
 homeassistant==2025.4.4
 aiomqtt>=2.0.0
 aiohttp>=3.8.0
-paho-mqtt
-wrapt-timeout-decorator
-dill
-wrapt
-module-wrapper
-multiprocess
