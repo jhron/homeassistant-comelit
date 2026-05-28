@@ -173,3 +173,15 @@ async def test_hub_reauth_watchdog_clears_stuck_reauth() -> None:
     hub._clear_stale_reauth()
 
     assert hub._reauth_in_progress is False
+
+
+@pytest.mark.asyncio
+async def test_hub_records_unsolicited_payload_when_debug_enabled() -> None:
+    hub = _make_hub()
+    hub.enable_payload_debug = True
+    hub._status_request_pending = False
+    payload = {"req_type": 0, "out_data": [{"elements": []}]}
+
+    await hub._async_dispatch(payload)
+
+    assert hub._last_unsolicited_payload == payload

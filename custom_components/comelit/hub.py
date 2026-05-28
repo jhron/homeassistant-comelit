@@ -137,6 +137,8 @@ class ComelitHub:
         self._login_error: str | None = None
         self._status_request_pending = False
         self._last_status_request = 0.0
+        self.enable_payload_debug = False
+        self._last_unsolicited_payload: dict[str, Any] | None = None
 
         # Entity storage
         self.sensors: dict[str, Any] = {}
@@ -448,6 +450,10 @@ class ComelitHub:
                 _LOGGER.debug("Ignoring invalid token response (seq_id=%s) - re-auth in progress or cooldown", 
                              payload.get("seq_id"))
             return
+
+        if self.enable_payload_debug and not self._status_request_pending:
+            self._last_unsolicited_payload = payload
+            _LOGGER.debug("Comelit Hub unsolicited payload observed: %s", payload)
         
         req_type = payload.get("req_type")
 
