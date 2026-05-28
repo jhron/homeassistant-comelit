@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 from homeassistant.components.sensor import SensorStateClass
 
@@ -33,7 +34,13 @@ def test_climate_zone_entities_share_device_info() -> None:
 
 
 def test_vedo_alarm_exposes_alarm_state() -> None:
-    alarm = VedoAlarm(1, "Area 1", AlarmControlPanelState.ARMED_AWAY, MagicMock())
+    alarm = VedoAlarm(
+        1,
+        "Area 1",
+        AlarmControlPanelState.ARMED_AWAY,
+        MagicMock(),
+        coordinator=MagicMock(data={}),
+    )
 
     assert alarm.alarm_state is AlarmControlPanelState.ARMED_AWAY
 
@@ -50,19 +57,34 @@ def test_numeric_sensors_expose_measurement_state_class() -> None:
 
 
 def test_vedo_binary_sensor_omits_motion_class_when_zone_type_unknown() -> None:
-    sensor = VedoSensor(1, "Zone 1", "off")
+    sensor = VedoSensor(1, "Zone 1", "off", coordinator=MagicMock(data={}))
 
     assert sensor.device_class is None
 
 
+def test_vedo_entities_require_coordinator() -> None:
+    with pytest.raises(TypeError):
+        VedoSensor(1, "Zone 1", "off")
+
+    with pytest.raises(TypeError):
+        VedoAlarm(
+            1,
+            "Area 1",
+            AlarmControlPanelState.DISARMED,
+            MagicMock(),
+        )
+
+
 def test_vedo_entities_use_stable_parent_identifier() -> None:
-    sensor = VedoSensor(1, "Zone 1", "off", parent_id="entry-id")
+    coordinator = MagicMock(data={})
+    sensor = VedoSensor(1, "Zone 1", "off", parent_id="entry-id", coordinator=coordinator)
     alarm = VedoAlarm(
         1,
         "Area 1",
         AlarmControlPanelState.DISARMED,
         MagicMock(),
         parent_id="entry-id",
+        coordinator=coordinator,
     )
 
     assert ("comelit", "entry-id-zone-1") in sensor.device_info["identifiers"]

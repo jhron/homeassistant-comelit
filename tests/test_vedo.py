@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 
 from custom_components.comelit.exception import ComelitCommandError
 from custom_components.comelit.vedo import ComelitVedo
@@ -21,45 +20,6 @@ def _make_vedo() -> ComelitVedo:
         password="pwd",
         scan_interval=30,
     )
-
-
-@pytest.mark.asyncio
-async def test_async_update_sensor_adds_and_updates_binary_sensor() -> None:
-    vedo = _make_vedo()
-    vedo.binary_sensor_add_entities = MagicMock()
-
-    await vedo._async_update_sensor(
-        {"id": 1, "name": "Garage", "status": "0011"}
-    )
-
-    assert len(vedo.sensors) == 1
-    vedo.sensors[1].async_write_ha_state = MagicMock()
-    assert vedo.sensors[1].is_on is True
-
-    await vedo._async_update_sensor(
-        {"id": 1, "name": "Garage", "status": "0000"}
-    )
-
-    assert len(vedo.sensors) == 1
-    assert vedo.sensors[1].is_on is False
-
-
-@pytest.mark.asyncio
-async def test_async_update_area_maps_alarm_state_and_updates_existing_entity() -> None:
-    vedo = _make_vedo()
-    vedo.alarm_add_entities = MagicMock()
-
-    await vedo._async_update_area({"id": 0, "name": "Main", "armed": 4})
-
-    assert len(vedo.areas) == 1
-    vedo.areas[0].async_write_ha_state = MagicMock()
-    assert vedo.areas[0].alarm_state is AlarmControlPanelState.ARMED_AWAY
-
-    await vedo._async_update_area({"id": 0, "name": "Main", "armed": 1})
-    assert vedo.areas[0].alarm_state is AlarmControlPanelState.ARMED_NIGHT
-
-    await vedo._async_update_area({"id": 0, "name": "Main", "armed": 0})
-    assert vedo.areas[0].alarm_state is AlarmControlPanelState.DISARMED
 
 
 @pytest.mark.asyncio
@@ -88,21 +48,6 @@ async def test_vedo_arm_disarm_raises_after_retry_exhaustion() -> None:
     with patch("custom_components.comelit.vedo.asyncio.sleep", new=AsyncMock()):
         with pytest.raises(ComelitCommandError, match="failed after 5 attempts"):
             await vedo.async_arm(1)
-
-
-def test_vedo_set_entities_available_updates_sensors_and_areas_once() -> None:
-    vedo = _make_vedo()
-    sensor = MagicMock()
-    area = MagicMock()
-    vedo.sensors[1] = sensor
-    vedo.areas[1] = area
-
-    vedo._set_entities_available(False)
-    vedo._set_entities_available(False)
-    vedo._set_entities_available(True)
-
-    assert sensor.set_available.call_args_list == [call(False), call(True)]
-    assert area.set_available.call_args_list == [call(False), call(True)]
 
 
 @pytest.mark.asyncio

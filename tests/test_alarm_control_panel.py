@@ -92,7 +92,14 @@ async def test_vedo_alarm_async_methods_delegate_to_vedo_runtime() -> None:
     vedo.async_disarm = AsyncMock()
     vedo.async_arm = AsyncMock()
     vedo.async_arm_night = AsyncMock()
-    alarm = VedoAlarm(1, "Area 1", AlarmControlPanelState.ARMED_AWAY, vedo)
+    coordinator = MagicMock(data={})
+    alarm = VedoAlarm(
+        1,
+        "Area 1",
+        AlarmControlPanelState.ARMED_AWAY,
+        vedo,
+        coordinator=coordinator,
+    )
 
     await alarm.async_alarm_disarm()
     await alarm.async_alarm_arm_away()
@@ -104,7 +111,13 @@ async def test_vedo_alarm_async_methods_delegate_to_vedo_runtime() -> None:
 
 
 def test_vedo_alarm_properties_expose_supported_state() -> None:
-    alarm = VedoAlarm(1, "Area 1", AlarmControlPanelState.ARMED_AWAY, MagicMock())
+    alarm = VedoAlarm(
+        1,
+        "Area 1",
+        AlarmControlPanelState.ARMED_AWAY,
+        MagicMock(),
+        coordinator=MagicMock(data={}),
+    )
 
     assert alarm.alarm_state is AlarmControlPanelState.ARMED_AWAY
     assert (
@@ -147,7 +160,13 @@ def test_vedo_entities_read_updated_coordinator_data() -> None:
 
 @pytest.mark.asyncio
 async def test_vedo_alarm_arm_home_is_not_supported() -> None:
-    alarm = VedoAlarm(1, "Area 1", AlarmControlPanelState.DISARMED, MagicMock())
+    alarm = VedoAlarm(
+        1,
+        "Area 1",
+        AlarmControlPanelState.DISARMED,
+        MagicMock(),
+        coordinator=MagicMock(data={}),
+    )
 
     with pytest.raises(NotImplementedError):
         await alarm.async_alarm_arm_home()

@@ -9,8 +9,6 @@ from typing import Any
 
 import aiohttp
 
-from homeassistant.components.alarm_control_panel import AlarmControlPanelState
-from homeassistant.const import STATE_ON, STATE_OFF
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
@@ -55,15 +53,6 @@ class ComelitVedo:
 
         self._session: aiohttp.ClientSession | None = None
         self._uid: str | None = None
-        self._entities_available = True
-
-        # Entity storage
-        self.sensors: dict[str, Any] = {}
-        self.areas: dict[str, Any] = {}
-
-        # Entity add callbacks
-        self.binary_sensor_add_entities = None
-        self.alarm_add_entities = None
 
         _LOGGER.debug("Initializing Comelit Vedo: %s:%s", host, port)
 
@@ -225,66 +214,7 @@ class ComelitVedo:
                 "out_time": out_time[i] if i < len(out_time) else 0,
             }
 
-        self._set_entities_available(True)
         return {ALARM_ZONE: zones, ALARM_AREA: areas}
-
-    def _set_entities_available(self, available: bool) -> None:
-        """Update Vedo entity availability once per transition."""
-        if self._entities_available == available:
-            return
-
-        self._entities_available = available
-        for entity_map in (self.sensors, self.areas):
-            for entity in entity_map.values():
-                if hasattr(entity, "set_available"):
-                    entity.set_available(available)
-
-        if available:
-            _LOGGER.info("Comelit Vedo entities are available again")
-        else:
-            _LOGGER.warning("Comelit Vedo entities are unavailable")
-
-    async def _async_update_sensor(self, data: dict[str, Any]) -> None:
-        """Update or create binary sensor."""
-        from .binary_sensor import VedoSensor
-
-        sensor_id = data["id"]
-        name = data["name"]
-        zone_status = int(data["status"], 16)
-        state = STATE_ON if (zone_status & 1) != 0 else STATE_OFF
-
-        if sensor_id not in self.sensors:
-            if self.binary_sensor_add_entities:
-                sensor = VedoSensor(sensor_id, name, state, parent_id=self.entry_id)
-                self.binary_sensor_add_entities([sensor])
-                self.sensors[sensor_id] = sensor
-                _LOGGER.debug("Added binary sensor: %s", name)
-        else:
-            self.sensors[sensor_id].update_state(state)
-
-    async def _async_update_area(self, data: dict[str, Any]) -> None:
-        """Update or create alarm area."""
-        from .alarm_control_panel import VedoAlarm
-
-        area_id = data["id"]
-        name = data["name"]
-        armed = data["armed"]
-
-        if armed == 4:
-            state = AlarmControlPanelState.ARMED_AWAY
-        elif armed == 1:
-            state = AlarmControlPanelState.ARMED_NIGHT
-        else:
-            state = AlarmControlPanelState.DISARMED
-
-        if area_id not in self.areas:
-            if self.alarm_add_entities:
-                alarm = VedoAlarm(area_id, name, state, self, parent_id=self.entry_id)
-                self.alarm_add_entities([alarm])
-                self.areas[area_id] = alarm
-                _LOGGER.debug("Added alarm area: %s", name)
-        else:
-            self.areas[area_id].update_state(state)
 
     async def async_arm(self, area_id: int) -> None:
         """Arm the alarm."""

@@ -62,11 +62,10 @@ class VedoAlarm(CoordinatorEntity, ComelitDevice, AlarmControlPanelEntity):
         vedo,
         *,
         parent_id: str | None = None,
-        coordinator=None,
+        coordinator,
     ) -> None:
         """Initialize the alarm panel."""
-        if coordinator is not None:
-            CoordinatorEntity.__init__(self, coordinator)
+        CoordinatorEntity.__init__(self, coordinator)
         device_id = f"{parent_id}-area-{id}" if parent_id else f"vedo-area-{id}"
         ComelitDevice.__init__(
             self,

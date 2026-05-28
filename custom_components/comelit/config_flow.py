@@ -420,8 +420,6 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                await self.async_set_unique_id(f"comelit_vedo_{current_data[CONF_HOST]}")
-                self._abort_if_unique_id_mismatch(reason="wrong_device")
                 return self.async_update_reload_and_abort(
                     config_entry,
                     data_updates={CONF_PASSWORD: user_input[CONF_PASSWORD]},

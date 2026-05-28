@@ -51,11 +51,10 @@ class VedoSensor(CoordinatorEntity, ComelitDevice, BinarySensorEntity):
         *,
         parent_id: str | None = None,
         zone_type: str | None = None,
-        coordinator=None,
+        coordinator,
     ) -> None:
         """Initialize the sensor."""
-        if coordinator is not None:
-            CoordinatorEntity.__init__(self, coordinator)
+        CoordinatorEntity.__init__(self, coordinator)
         device_id = f"{parent_id}-zone-{id}" if parent_id else f"vedo-zone-{id}"
         ComelitDevice.__init__(
             self,
