@@ -7,7 +7,12 @@ import pytest
 from homeassistant.const import CONF_HOST
 from homeassistant.data_entry_flow import AbortFlow
 
-from custom_components.comelit.config_flow import ComelitConfigFlow, validate_vedo_connection
+from custom_components.comelit.config_flow import (
+    CannotConnect,
+    ComelitConfigFlow,
+    InvalidAuth,
+    validate_vedo_connection,
+)
 
 
 @pytest.mark.asyncio
@@ -65,3 +70,76 @@ async def test_vedo_reconfigure_aborts_on_identity_mismatch() -> None:
         await flow.async_step_reconfigure({"host": "192.168.1.50", "port": 80, "password": "123456"})
 
     flow._async_abort_entries_match.assert_called_once_with({CONF_HOST: "192.168.1.50"})
+
+
+@pytest.mark.asyncio
+async def test_hub_user_flow_aborts_duplicate_unique_id() -> None:
+    flow = ComelitConfigFlow()
+    flow.hass = MagicMock()
+    flow.async_set_unique_id = AsyncMock()
+    flow._abort_if_unique_id_configured = MagicMock(side_effect=AbortFlow("already_configured"))
+
+    user_input = {
+        "host": "127.0.0.1",
+        "port": 1883,
+        "mqtt_user": "hsrv-user",
+        "mqtt_password": "pwd",
+        "serial": "00000000",
+        "username": "user",
+        "password": "hub-password",
+        "client": "homeassistant",
+        "scan_interval": 30,
+    }
+
+    with patch(
+        "custom_components.comelit.config_flow.validate_hub_connection",
+        new=AsyncMock(return_value={"title": "Comelit Hub (127.0.0.1)"}),
+    ):
+        with pytest.raises(AbortFlow):
+            await flow.async_step_hub(user_input)
+
+    flow.async_set_unique_id.assert_awaited_once_with("comelit_hub_00000000")
+    flow._abort_if_unique_id_configured.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_vedo_user_flow_shows_invalid_auth() -> None:
+    flow = ComelitConfigFlow()
+    flow.hass = MagicMock()
+    flow._async_abort_entries_match = MagicMock()
+
+    with patch(
+        "custom_components.comelit.config_flow.validate_vedo_connection",
+        new=AsyncMock(side_effect=InvalidAuth),
+    ):
+        result = await flow.async_step_vedo({"host": "127.0.0.1", "port": 80, "password": "bad"})
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+@pytest.mark.asyncio
+async def test_hub_user_flow_shows_cannot_connect() -> None:
+    flow = ComelitConfigFlow()
+    flow.hass = MagicMock()
+
+    with patch(
+        "custom_components.comelit.config_flow.validate_hub_connection",
+        new=AsyncMock(side_effect=CannotConnect),
+    ):
+        result = await flow.async_step_hub(
+            {
+                "host": "127.0.0.1",
+                "port": 1883,
+                "mqtt_user": "hsrv-user",
+                "mqtt_password": "pwd",
+                "serial": "00000000",
+                "username": "user",
+                "password": "hub-password",
+                "client": "homeassistant",
+                "scan_interval": 30,
+            }
+        )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "cannot_connect"}
