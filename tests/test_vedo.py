@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 
+from custom_components.comelit.exception import ComelitCommandError
 from custom_components.comelit.vedo import ComelitVedo
 
 
@@ -75,3 +76,13 @@ async def test_async_arm_disarm_retries_failed_login_and_reuses_new_cookie() -> 
         parse_json=False,
     )
     vedo._async_logout.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_vedo_arm_disarm_raises_after_retry_exhaustion() -> None:
+    vedo = _make_vedo()
+    vedo._async_login = AsyncMock(side_effect=RuntimeError("offline"))
+
+    with patch("custom_components.comelit.vedo.asyncio.sleep", new=AsyncMock()):
+        with pytest.raises(ComelitCommandError, match="failed after 5 attempts"):
+            await vedo.async_arm(1)

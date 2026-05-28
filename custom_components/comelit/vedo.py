@@ -13,7 +13,7 @@ from homeassistant.components.alarm_control_panel import AlarmControlPanelState
 from homeassistant.const import STATE_ON, STATE_OFF
 from homeassistant.core import HomeAssistant
 
-from .exception import ComelitAuthError, ComelitConnectionError
+from .exception import ComelitAuthError, ComelitCommandError, ComelitConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -336,6 +336,9 @@ class ComelitVedo:
             except Exception as err:
                 if attempt == ARM_DISARM_ATTEMPTS:
                     _LOGGER.error("Arm/Disarm failed after %s attempts: %s", ARM_DISARM_ATTEMPTS, err)
+                    raise ComelitCommandError(
+                        f"Vedo arm/disarm command failed after {ARM_DISARM_ATTEMPTS} attempts"
+                    ) from err
                 else:
                     _LOGGER.warning("Arm/Disarm attempt %s failed, retrying...", attempt)
 
