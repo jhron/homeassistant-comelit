@@ -87,7 +87,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
         hass.data[DOMAIN][entry.entry_id] = hub
         entry.runtime_data = hub
 
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_HUB)
+        try:
+            await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_HUB)
+        except Exception:
+            hass.data[DOMAIN].pop(entry.entry_id, None)
+            entry.runtime_data = None
+            await hub.async_disconnect()
+            raise
         _LOGGER.info("Comelit SimpleHome Hub integration started")
 
     elif device_type == DEVICE_TYPE_VEDO:
@@ -113,7 +119,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
         hass.data[DOMAIN][entry.entry_id] = vedo
         entry.runtime_data = vedo
 
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_VEDO)
+        try:
+            await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS_VEDO)
+        except Exception:
+            hass.data[DOMAIN].pop(entry.entry_id, None)
+            entry.runtime_data = None
+            await vedo.async_disconnect()
+            raise
         _LOGGER.info("Comelit Vedo integration started")
 
     return True

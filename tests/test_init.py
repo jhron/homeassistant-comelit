@@ -108,6 +108,42 @@ async def test_async_setup_entry_vedo_success_sets_runtime_data() -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_setup_entry_hub_cleans_up_when_forward_setup_fails() -> None:
+    hass = _mock_hass()
+    entry = _mock_hub_entry()
+    hass.config_entries.async_forward_entry_setups = AsyncMock(side_effect=RuntimeError("boom"))
+
+    with patch("custom_components.comelit.ComelitHub") as mock_hub_cls:
+        mock_hub = mock_hub_cls.return_value
+        mock_hub.async_connect = AsyncMock()
+        mock_hub.async_disconnect = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await async_setup_entry(hass, entry)
+
+    mock_hub.async_disconnect.assert_awaited_once()
+    assert entry.entry_id not in hass.data[DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_vedo_cleans_up_when_forward_setup_fails() -> None:
+    hass = _mock_hass()
+    entry = _mock_vedo_entry()
+    hass.config_entries.async_forward_entry_setups = AsyncMock(side_effect=RuntimeError("boom"))
+
+    with patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls:
+        mock_vedo = mock_vedo_cls.return_value
+        mock_vedo.async_connect = AsyncMock()
+        mock_vedo.async_disconnect = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await async_setup_entry(hass, entry)
+
+    mock_vedo.async_disconnect.assert_awaited_once()
+    assert entry.entry_id not in hass.data[DOMAIN]
+
+
+@pytest.mark.asyncio
 async def test_async_unload_entry_hub_disconnects_runtime_data() -> None:
     hass = _mock_hass()
     entry = _mock_hub_entry()
