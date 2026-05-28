@@ -3,8 +3,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components.climate import HVACMode
 from homeassistant.const import STATE_CLOSED, STATE_OFF, STATE_ON
 
+from custom_components.comelit.climate import ComelitClimate
+from custom_components.comelit.exception import ComelitCommandError
 from custom_components.comelit.hub import ComelitHub
 from custom_components.comelit.cover import ComelitCover
 from custom_components.comelit.light import ComelitLight
@@ -98,3 +101,53 @@ async def test_hub_light_update_passes_brightness_to_existing_entity() -> None:
     )
 
     existing_light.update_state.assert_called_once_with(STATE_ON, 99)
+
+
+@pytest.mark.asyncio
+async def test_light_does_not_mutate_state_after_failed_turn_on() -> None:
+    hub = MagicMock()
+    hub.async_light_on = AsyncMock(side_effect=ComelitCommandError("offline"))
+    light = ComelitLight("light-id", "Kitchen", STATE_OFF, 10, hub)
+    light.async_write_ha_state = MagicMock()
+
+    with pytest.raises(ComelitCommandError):
+        await light.async_turn_on(brightness=128)
+
+    assert light.is_on is False
+    assert light.brightness == 10
+    light.async_write_ha_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cover_does_not_mutate_state_after_failed_open() -> None:
+    hub = MagicMock()
+    hub.async_cover_up = AsyncMock(side_effect=ComelitCommandError("offline"))
+    cover = ComelitCover("cover-id", "Shutter", STATE_CLOSED, 25, hub)
+    cover.async_write_ha_state = MagicMock()
+
+    with pytest.raises(ComelitCommandError):
+        await cover.async_open_cover()
+
+    assert cover.is_closed is True
+    cover.async_write_ha_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_climate_does_not_mutate_state_after_failed_hvac_mode() -> None:
+    hub = MagicMock()
+    hub.enable_climate_debug = False
+    hub.async_climate_set_mode = AsyncMock(side_effect=ComelitCommandError("offline"))
+    hub.async_climate_set_season = AsyncMock()
+    climate = ComelitClimate(
+        "DOM#CL#1",
+        "Living",
+        {"auto_man": 5, "powerst": 0, "is_winter_season": False},
+        hub,
+    )
+    climate.async_write_ha_state = MagicMock()
+
+    with pytest.raises(ComelitCommandError):
+        await climate.async_set_hvac_mode(HVACMode.HEAT)
+
+    assert climate.hvac_mode is HVACMode.OFF
+    climate.async_write_ha_state.assert_not_called()

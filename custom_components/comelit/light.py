@@ -95,10 +95,13 @@ class ComelitLight(ComelitDevice, LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light."""
         brightness = kwargs.get(ATTR_BRIGHTNESS)
+
+        await self._hub.async_light_on(
+            self._id,
+            brightness if brightness is not None else self._brightness,
+        )
         if brightness is not None:
             self._brightness = brightness
-
-        await self._hub.async_light_on(self._id, self._brightness)
         self._state = STATE_ON
         self.async_write_ha_state()
 
