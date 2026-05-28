@@ -53,6 +53,7 @@ class ComelitVedo:
         self._session: aiohttp.ClientSession | None = None
         self._uid: str | None = None
         self._connected = False
+        self._entities_available = True
         self._update_task: asyncio.Task | None = None
 
         # Entity storage
@@ -195,10 +196,12 @@ class ComelitVedo:
                         self._uid = await self._async_login()
                     except ComelitAuthError as err:
                         _LOGGER.error("Vedo authentication failed: %s", err)
+                        self._set_entities_available(False)
                         await asyncio.sleep(self.scan_interval)
                         continue
                     except ComelitConnectionError as err:
                         _LOGGER.warning("Vedo reconnect failed: %s", err)
+                        self._set_entities_available(False)
                         await asyncio.sleep(self.scan_interval)
                         continue
 
@@ -258,16 +261,36 @@ class ComelitVedo:
                     }
                     await self._async_update_area(area_data)
 
+                self._set_entities_available(True)
+
             except CookieExpired:
                 _LOGGER.debug("Cookie expired, re-logging")
+                self._set_entities_available(False)
                 await self._async_logout()
                 self._uid = None
             except Exception as err:
                 _LOGGER.error("Update error: %s", err)
+                self._set_entities_available(False)
                 await self._async_logout()
                 self._uid = None
 
             await asyncio.sleep(self.scan_interval)
+
+    def _set_entities_available(self, available: bool) -> None:
+        """Update Vedo entity availability once per transition."""
+        if self._entities_available == available:
+            return
+
+        self._entities_available = available
+        for entity_map in (self.sensors, self.areas):
+            for entity in entity_map.values():
+                if hasattr(entity, "set_available"):
+                    entity.set_available(available)
+
+        if available:
+            _LOGGER.info("Comelit Vedo entities are available again")
+        else:
+            _LOGGER.warning("Comelit Vedo entities are unavailable")
 
     async def _async_update_sensor(self, data: dict[str, Any]) -> None:
         """Update or create binary sensor."""

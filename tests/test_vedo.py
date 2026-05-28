@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.components.alarm_control_panel import AlarmControlPanelState
@@ -86,3 +86,18 @@ async def test_vedo_arm_disarm_raises_after_retry_exhaustion() -> None:
     with patch("custom_components.comelit.vedo.asyncio.sleep", new=AsyncMock()):
         with pytest.raises(ComelitCommandError, match="failed after 5 attempts"):
             await vedo.async_arm(1)
+
+
+def test_vedo_set_entities_available_updates_sensors_and_areas_once() -> None:
+    vedo = _make_vedo()
+    sensor = MagicMock()
+    area = MagicMock()
+    vedo.sensors[1] = sensor
+    vedo.areas[1] = area
+
+    vedo._set_entities_available(False)
+    vedo._set_entities_available(False)
+    vedo._set_entities_available(True)
+
+    assert sensor.set_available.call_args_list == [call(False), call(True)]
+    assert area.set_available.call_args_list == [call(False), call(True)]
