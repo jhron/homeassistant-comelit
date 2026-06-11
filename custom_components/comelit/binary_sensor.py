@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-)
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -47,7 +44,6 @@ class VedoSensor(CoordinatorEntity, ComelitDevice, BinarySensorEntity):
         description: str,
         *,
         parent_id: str | None = None,
-        zone_type: str | None = None,
         coordinator,
     ) -> None:
         """Initialize the sensor."""
@@ -63,7 +59,6 @@ class VedoSensor(CoordinatorEntity, ComelitDevice, BinarySensorEntity):
             model="Vedo Zone",
         )
         self._numeric_id = id
-        self._zone_type = zone_type
 
     def _zone(self):
         """Return the coordinator snapshot for this zone, if present."""
@@ -81,10 +76,3 @@ class VedoSensor(CoordinatorEntity, ComelitDevice, BinarySensorEntity):
         if zone is None:
             return None
         return (int(zone["status"], 16) & 1) != 0
-
-    @property
-    def device_class(self) -> BinarySensorDeviceClass | None:
-        """Return the device class."""
-        if self._zone_type == "motion":
-            return BinarySensorDeviceClass.MOTION
-        return None

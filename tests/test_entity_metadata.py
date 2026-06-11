@@ -59,7 +59,7 @@ def test_numeric_sensors_expose_measurement_state_class() -> None:
         assert sensor.state_class is SensorStateClass.MEASUREMENT
 
 
-def test_vedo_binary_sensor_omits_motion_class_when_zone_type_unknown() -> None:
+def test_vedo_binary_sensor_has_no_device_class() -> None:
     sensor = VedoSensor(1, "Zone 1", coordinator=MagicMock(data={}))
 
     assert sensor.device_class is None
