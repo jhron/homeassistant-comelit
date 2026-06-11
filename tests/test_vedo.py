@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -165,6 +166,44 @@ async def test_vedo_coordinator_raises_update_failed_on_connection_error() -> No
 
     with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
+async def test_get_all_areas_and_zones_fetches_endpoints_concurrently() -> None:
+    vedo = _make_vedo()
+    responses = {
+        "user/zone_desc.json": {"description": ["Zone 1"], "in_area": [1]},
+        "user/zone_stat.json": {"status": "0000"},
+        "user/area_desc.json": {"description": ["Area 1"], "p1_pres": [0], "p2_pres": [0]},
+        "user/area_stat.json": {
+            "armed": [0],
+            "ready": [0],
+            "alarm": [0],
+            "alarm_memory": [0],
+            "sabotage": [0],
+            "anomaly": [0],
+            "in_time": [0],
+            "out_time": [0],
+        },
+    }
+    in_flight = 0
+    max_in_flight = 0
+
+    async def fake_get(path: str, parse_json: bool = True):
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        await asyncio.sleep(0)
+        in_flight -= 1
+        return responses[path]
+
+    vedo._async_get = fake_get
+
+    data = await vedo.get_all_areas_and_zones()
+
+    assert max_in_flight == 4
+    assert data["alarm_zone"][0]["name"] == "Zone 1"
+    assert data["alarm_area"][0]["name"] == "Area 1"
 
 
 def test_vedo_authenticated_reflects_session_cookie() -> None:

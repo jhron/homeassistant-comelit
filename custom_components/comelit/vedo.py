@@ -166,10 +166,12 @@ class ComelitVedo:
 
     async def get_all_areas_and_zones(self) -> dict[str, dict[int, dict[str, Any]]]:
         """Fetch all Vedo areas and zones as a single snapshot."""
-        zone_desc = await self._async_get(VedoRequest.ZONE_DESC)
-        zone_status = await self._async_get(VedoRequest.ZONE_STAT)
-        areas_desc = await self._async_get(VedoRequest.AREA_DESC)
-        areas_stat = await self._async_get(VedoRequest.AREA_STAT)
+        zone_desc, zone_status, areas_desc, areas_stat = await asyncio.gather(
+            self._async_get(VedoRequest.ZONE_DESC),
+            self._async_get(VedoRequest.ZONE_STAT),
+            self._async_get(VedoRequest.AREA_DESC),
+            self._async_get(VedoRequest.AREA_STAT),
+        )
 
         if not all([zone_desc, zone_status, areas_desc, areas_stat]):
             raise ComelitConnectionError("Failed to get Vedo data")
