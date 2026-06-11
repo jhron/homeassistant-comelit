@@ -205,7 +205,7 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="hub",
-            data_schema=_hub_schema({}),
+            data_schema=_hub_schema(user_input or {}),
             errors=errors,
         )
 
@@ -232,7 +232,7 @@ class ComelitConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="vedo",
-            data_schema=_vedo_schema({}),
+            data_schema=_vedo_schema(user_input or {}),
             errors=errors,
         )
 
