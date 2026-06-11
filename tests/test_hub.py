@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiomqtt
 import pytest
 
-from custom_components.comelit.exception import ComelitCommandError
+from custom_components.comelit.exception import ComelitCommandError, ComelitConnectionError
 from custom_components.comelit.hub import ComelitHub
 
 
@@ -173,6 +173,17 @@ async def test_hub_reauth_watchdog_clears_stuck_reauth() -> None:
     hub._clear_stale_reauth()
 
     assert hub._reauth_in_progress is False
+
+
+@pytest.mark.asyncio
+async def test_hub_connect_error_includes_broker_error_detail() -> None:
+    hub = _make_hub()
+    client = MagicMock()
+    client.__aenter__.side_effect = aiomqtt.MqttError("[Errno 111] Connection refused")
+
+    with patch("custom_components.comelit.hub.aiomqtt.Client", return_value=client):
+        with pytest.raises(ComelitConnectionError, match="Connection refused"):
+            await hub.async_connect()
 
 
 @pytest.mark.asyncio

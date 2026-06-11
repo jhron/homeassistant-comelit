@@ -226,7 +226,9 @@ class ComelitHub:
             raise ComelitConnectionError("Timed out during Comelit Hub handshake") from err
         except aiomqtt.MqttError as err:
             await self._async_cleanup_connection()
-            raise ComelitConnectionError("Failed to connect to Comelit MQTT broker") from err
+            raise ComelitConnectionError(
+                f"Failed to connect to Comelit MQTT broker: {err}"
+            ) from err
 
     async def async_disconnect(self) -> None:
         """Disconnect from the MQTT broker."""
