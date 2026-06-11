@@ -1,0 +1,92 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Integrace Comelit",
+        "description": "Vyberte typ zařízení, které chcete nastavit.",
+        "data": {
+          "device_type": "Typ zařízení"
+        }
+      },
+      "hub": {
+        "title": "Nastavení Comelit SimpleHome Hub",
+        "description": "Zadejte připojovací údaje vašeho Comelit Hubu.",
+        "data": {
+          "host": "Adresa MQTT brokeru",
+          "port": "MQTT port",
+          "mqtt_user": "MQTT uživatelské jméno",
+          "mqtt_password": "MQTT heslo",
+          "serial": "Sériové číslo hubu",
+          "username": "Uživatelské jméno hubu",
+          "password": "Heslo hubu",
+          "client": "MQTT client ID",
+          "scan_interval": "Interval aktualizace (sekundy)"
+        }
+      },
+      "vedo": {
+        "title": "Nastavení alarmu Comelit Vedo",
+        "description": "Zadejte připojovací údaje vašeho Comelit Vedo.",
+        "data": {
+          "host": "Adresa Vedo",
+          "port": "Port Vedo",
+          "password": "Heslo Vedo",
+          "scan_interval": "Interval aktualizace (sekundy)"
+        }
+      },
+      "reconfigure": {
+        "title": "Změna nastavení Comelit",
+        "description": "Upravte připojovací údaje této integrace.",
+        "data": {
+          "host": "Adresa",
+          "port": "Port",
+          "mqtt_user": "MQTT uživatelské jméno",
+          "mqtt_password": "MQTT heslo",
+          "serial": "Sériové číslo hubu",
+          "username": "Uživatelské jméno hubu",
+          "password": "Heslo",
+          "client": "MQTT client ID"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Opětovné přihlášení Comelit",
+        "description": "Aktualizujte přihlašovací údaje této integrace.",
+        "data": {
+          "mqtt_user": "MQTT uživatelské jméno",
+          "mqtt_password": "MQTT heslo",
+          "username": "Uživatelské jméno hubu",
+          "password": "Heslo"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Připojení se nezdařilo",
+      "invalid_auth": "Neplatné přihlašovací údaje",
+      "unknown": "Neočekávaná chyba"
+    },
+    "abort": {
+      "already_configured": "Zařízení je již nakonfigurováno",
+      "reconfigure_successful": "Nastavení bylo aktualizováno",
+      "wrong_device": "Nové nastavení míří na jiné zařízení"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Možnosti Comelit",
+        "description": "Upravte běhová nastavení této integrace.",
+        "data": {
+          "scan_interval": "Interval aktualizace (sekundy)",
+          "enable_climate_debug": "Povolit podrobné ladění klimatizace v logu"
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "cannot_authenticate": {
+      "message": "Přihlášení k zařízení Comelit se nezdařilo"
+    },
+    "update_failed": {
+      "message": "Aktualizace dat z Comelit selhala: {error}"
+    }
+  }
+}
