@@ -48,11 +48,19 @@ After the integration is added, Home Assistant exposes three different flows:
 
 ### Polling and scan interval
 
-The integration uses local polling. Comelit Hub communicates over MQTT, but the integration sends request/response
-status requests instead of relying on unsolicited push updates. Comelit Vedo is polled over HTTP.
+The integration uses local polling. Comelit Hub communicates over MQTT, but it is strictly request/response: the hub
+does not broadcast unsolicited state updates, so every state change is only observed when the integration sends a
+status request (verified on a real hub, see [`docs/hub_push_investigation.md`](./docs/hub_push_investigation.md)).
+Comelit Vedo is polled over HTTP.
 
 The default `scan_interval` is suitable for normal use. Lower values can make Home Assistant show changes sooner, but
 they also increase traffic to the panel and should be used only when the panel remains responsive.
+
+**Do not connect two Home Assistant instances to the same hub with the same MQTT client ID** (the `client` field,
+default `homeassistant`). The hub addresses its responses to topics derived from the client ID, so two instances with
+the same ID receive each other's responses — one instance then appears to update instantly because it consumes status
+responses triggered by the other instance's polling, and the two sessions invalidate each other's tokens. Use a unique
+`client` value per instance (for example a dev/test instance).
 
 Detailed climate debug logging is intended for temporary troubleshooting while confirming Comelit mode and season
 behavior. Disable it after collecting logs to avoid noisy Home Assistant logs.
