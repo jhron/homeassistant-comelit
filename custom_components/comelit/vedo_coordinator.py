@@ -34,7 +34,7 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
         super().__init__(
             hass=hass,
             logger=_LOGGER,
-            config_entry=entry if hasattr(entry, "async_on_unload") and hasattr(entry, "state") else None,
+            config_entry=entry,
             name=f"{DOMAIN}-{entry.entry_id}-vedo",
             update_interval=timedelta(seconds=scan_interval),
         )

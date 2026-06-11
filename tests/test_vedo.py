@@ -74,9 +74,23 @@ def _make_coordinator() -> ComelitVedoCoordinator:
     return ComelitVedoCoordinator(
         hass=MagicMock(),
         api=MagicMock(),
-        entry=SimpleNamespace(entry_id="entry-id"),
+        entry=SimpleNamespace(entry_id="entry-id", async_on_unload=MagicMock()),
         scan_interval=30,
     )
+
+
+def test_vedo_coordinator_binds_config_entry() -> None:
+    entry = SimpleNamespace(entry_id="entry-id", async_on_unload=MagicMock())
+
+    coordinator = ComelitVedoCoordinator(
+        hass=MagicMock(),
+        api=MagicMock(),
+        entry=entry,
+        scan_interval=30,
+    )
+
+    assert coordinator.config_entry is entry
+    entry.async_on_unload.assert_called_once()
 
 
 @pytest.mark.asyncio
