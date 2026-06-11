@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.comelit.exception import ComelitCommandError
+from custom_components.comelit.exception import ComelitAuthError, ComelitCommandError
 from custom_components.comelit.vedo import ComelitVedo
 from custom_components.comelit.vedo_coordinator import ComelitVedoCoordinator
 
@@ -70,14 +70,19 @@ async def test_vedo_async_connect_uses_ha_created_client_session() -> None:
     assert vedo._session is session
 
 
-@pytest.mark.asyncio
-async def test_vedo_coordinator_refresh_returns_zone_and_area_snapshot() -> None:
-    coordinator = ComelitVedoCoordinator(
+def _make_coordinator() -> ComelitVedoCoordinator:
+    return ComelitVedoCoordinator(
         hass=MagicMock(),
         api=MagicMock(),
         entry=SimpleNamespace(entry_id="entry-id"),
         scan_interval=30,
     )
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_refresh_returns_zone_and_area_snapshot() -> None:
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = False
     coordinator.api.login = AsyncMock()
     coordinator.api.get_all_areas_and_zones = AsyncMock(
         return_value={"alarm_zone": {1: MagicMock(index=1)}, "alarm_area": {1: MagicMock(index=1)}}
@@ -87,3 +92,43 @@ async def test_vedo_coordinator_refresh_returns_zone_and_area_snapshot() -> None
 
     assert set(data) == {"alarm_zone", "alarm_area"}
     coordinator.api.login.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_reuses_active_session_without_login() -> None:
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = True
+    coordinator.api.login = AsyncMock()
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        return_value={"alarm_zone": {}, "alarm_area": {}}
+    )
+
+    await coordinator._async_update_data()
+
+    coordinator.api.login.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_relogs_in_once_when_cookie_expired() -> None:
+    snapshot = {"alarm_zone": {}, "alarm_area": {}}
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = True
+    coordinator.api.login = AsyncMock()
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        side_effect=[ComelitAuthError("Vedo cookie expired"), snapshot]
+    )
+
+    data = await coordinator._async_update_data()
+
+    coordinator.api.login.assert_awaited_once()
+    assert data == snapshot
+
+
+def test_vedo_authenticated_reflects_session_cookie() -> None:
+    vedo = _make_vedo()
+
+    assert vedo.authenticated is False
+
+    vedo._uid = "uid=abc"
+
+    assert vedo.authenticated is True

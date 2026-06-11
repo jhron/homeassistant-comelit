@@ -136,6 +136,11 @@ class ComelitVedo:
 
         self._uid = None
 
+    @property
+    def authenticated(self) -> bool:
+        """Return True if a Vedo session cookie is stored."""
+        return self._uid is not None
+
     async def login(self) -> None:
         """Log in and store the current Vedo session cookie."""
         self._uid = await self._async_login()
