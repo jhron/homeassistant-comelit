@@ -176,6 +176,18 @@ async def test_hub_reauth_watchdog_clears_stuck_reauth() -> None:
 
 
 @pytest.mark.asyncio
+async def test_hub_dispatch_clears_reauth_when_announce_publish_fails() -> None:
+    hub = _make_hub()
+    hub._async_announce = AsyncMock(side_effect=ComelitCommandError("publish failed"))
+    payload = {"req_result": 1, "message": "invalid token", "seq_id": 7}
+
+    await hub._async_dispatch(payload)
+
+    assert hub._reauth_in_progress is False
+    assert hub._reauth_started_at == 0.0
+
+
+@pytest.mark.asyncio
 async def test_hub_records_unsolicited_payload_when_debug_enabled() -> None:
     hub = _make_hub()
     hub.enable_payload_debug = True

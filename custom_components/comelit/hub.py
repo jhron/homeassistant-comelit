@@ -445,7 +445,12 @@ class ComelitHub:
                 self._last_reauth_time = current_time
                 self._reauth_started_at = time.monotonic()
                 self.sessiontoken = ""
-                await self._async_announce()
+                try:
+                    await self._async_announce()
+                except ComelitCommandError as err:
+                    _LOGGER.warning("Re-authentication announce failed: %s", err)
+                    self._reauth_in_progress = False
+                    self._reauth_started_at = 0.0
             else:
                 _LOGGER.debug("Ignoring invalid token response (seq_id=%s) - re-auth in progress or cooldown", 
                              payload.get("seq_id"))
