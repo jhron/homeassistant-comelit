@@ -10,6 +10,7 @@ from custom_components.comelit.alarm_control_panel import VedoAlarm
 from custom_components.comelit.binary_sensor import VedoSensor
 from custom_components.comelit.climate import ComelitClimate
 from custom_components.comelit.sensor import HumiditySensor, PowerSensor, TemperatureSensor
+from custom_components.comelit.vedo_coordinator import ALARM_AREA
 
 
 def test_climate_zone_entities_share_device_info() -> None:
@@ -34,12 +35,14 @@ def test_climate_zone_entities_share_device_info() -> None:
 
 
 def test_vedo_alarm_exposes_alarm_state() -> None:
+    coordinator = MagicMock(
+        data={ALARM_AREA: {1: {"id": 1, "name": "Area 1", "armed": 4}}}
+    )
     alarm = VedoAlarm(
         1,
         "Area 1",
-        AlarmControlPanelState.ARMED_AWAY,
         MagicMock(),
-        coordinator=MagicMock(data={}),
+        coordinator=coordinator,
     )
 
     assert alarm.alarm_state is AlarmControlPanelState.ARMED_AWAY
@@ -57,31 +60,29 @@ def test_numeric_sensors_expose_measurement_state_class() -> None:
 
 
 def test_vedo_binary_sensor_omits_motion_class_when_zone_type_unknown() -> None:
-    sensor = VedoSensor(1, "Zone 1", "off", coordinator=MagicMock(data={}))
+    sensor = VedoSensor(1, "Zone 1", coordinator=MagicMock(data={}))
 
     assert sensor.device_class is None
 
 
 def test_vedo_entities_require_coordinator() -> None:
     with pytest.raises(TypeError):
-        VedoSensor(1, "Zone 1", "off")
+        VedoSensor(1, "Zone 1")
 
     with pytest.raises(TypeError):
         VedoAlarm(
             1,
             "Area 1",
-            AlarmControlPanelState.DISARMED,
             MagicMock(),
         )
 
 
 def test_vedo_entities_use_stable_parent_identifier() -> None:
     coordinator = MagicMock(data={})
-    sensor = VedoSensor(1, "Zone 1", "off", parent_id="entry-id", coordinator=coordinator)
+    sensor = VedoSensor(1, "Zone 1", parent_id="entry-id", coordinator=coordinator)
     alarm = VedoAlarm(
         1,
         "Area 1",
-        AlarmControlPanelState.DISARMED,
         MagicMock(),
         parent_id="entry-id",
         coordinator=coordinator,

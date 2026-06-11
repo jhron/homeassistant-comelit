@@ -96,7 +96,6 @@ async def test_vedo_alarm_async_methods_delegate_to_vedo_runtime() -> None:
     alarm = VedoAlarm(
         1,
         "Area 1",
-        AlarmControlPanelState.ARMED_AWAY,
         vedo,
         coordinator=coordinator,
     )
@@ -111,12 +110,14 @@ async def test_vedo_alarm_async_methods_delegate_to_vedo_runtime() -> None:
 
 
 def test_vedo_alarm_properties_expose_supported_state() -> None:
+    coordinator = MagicMock(
+        data={ALARM_AREA: {1: {"id": 1, "name": "Area 1", "armed": 4}}}
+    )
     alarm = VedoAlarm(
         1,
         "Area 1",
-        AlarmControlPanelState.ARMED_AWAY,
         MagicMock(),
-        coordinator=MagicMock(data={}),
+        coordinator=coordinator,
     )
 
     assert alarm.alarm_state is AlarmControlPanelState.ARMED_AWAY
@@ -138,7 +139,6 @@ def test_vedo_entities_read_updated_coordinator_data() -> None:
     alarm = VedoAlarm(
         1,
         "Area 1",
-        AlarmControlPanelState.ARMED_AWAY,
         coordinator.api,
         parent_id="entry-id",
         coordinator=coordinator,
@@ -146,7 +146,6 @@ def test_vedo_entities_read_updated_coordinator_data() -> None:
     sensor = VedoSensor(
         1,
         "Zone 1",
-        "off",
         parent_id="entry-id",
         coordinator=coordinator,
     )
@@ -158,12 +157,60 @@ def test_vedo_entities_read_updated_coordinator_data() -> None:
     assert sensor.is_on is True
 
 
+def test_vedo_alarm_unavailable_when_area_missing_from_coordinator_data() -> None:
+    coordinator = MagicMock()
+    coordinator.last_update_success = True
+    coordinator.data = {ALARM_AREA: {}}
+    alarm = VedoAlarm(
+        1,
+        "Area 1",
+        MagicMock(),
+        coordinator=coordinator,
+    )
+
+    assert alarm.available is False
+    assert alarm.alarm_state is None
+
+
+def test_vedo_sensor_unavailable_when_zone_missing_from_coordinator_data() -> None:
+    coordinator = MagicMock()
+    coordinator.last_update_success = True
+    coordinator.data = None
+    sensor = VedoSensor(
+        1,
+        "Zone 1",
+        parent_id="entry-id",
+        coordinator=coordinator,
+    )
+
+    assert sensor.available is False
+    assert sensor.is_on is None
+
+
+def test_vedo_entities_available_when_coordinator_has_data() -> None:
+    coordinator = MagicMock()
+    coordinator.last_update_success = True
+    coordinator.data = {
+        ALARM_AREA: {1: {"id": 1, "name": "Area 1", "armed": 0}},
+        ALARM_ZONE: {1: {"id": 1, "name": "Zone 1", "status": "0000"}},
+    }
+    alarm = VedoAlarm(
+        1,
+        "Area 1",
+        MagicMock(),
+        coordinator=coordinator,
+    )
+    sensor = VedoSensor(1, "Zone 1", coordinator=coordinator)
+
+    assert alarm.available is True
+    assert sensor.available is True
+
+
 @pytest.mark.asyncio
 async def test_vedo_alarm_arm_home_is_not_supported() -> None:
     alarm = VedoAlarm(
         1,
         "Area 1",
-        AlarmControlPanelState.DISARMED,
         MagicMock(),
         coordinator=MagicMock(data={}),
     )

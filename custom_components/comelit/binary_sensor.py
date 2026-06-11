@@ -8,7 +8,6 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -31,7 +30,6 @@ async def async_setup_entry(
         VedoSensor(
             zone["id"],
             zone["name"],
-            STATE_ON if (int(zone["status"], 16) & 1) != 0 else STATE_OFF,
             parent_id=entry.entry_id,
             coordinator=coordinator,
         )
@@ -47,7 +45,6 @@ class VedoSensor(CoordinatorEntity, ComelitDevice, BinarySensorEntity):
         self,
         id: int,
         description: str,
-        state: str,
         *,
         parent_id: str | None = None,
         zone_type: str | None = None,
@@ -66,17 +63,24 @@ class VedoSensor(CoordinatorEntity, ComelitDevice, BinarySensorEntity):
             model="Vedo Zone",
         )
         self._numeric_id = id
-        self._state = state
         self._zone_type = zone_type
 
+    def _zone(self):
+        """Return the coordinator snapshot for this zone, if present."""
+        return (self.coordinator.data or {}).get(ALARM_ZONE, {}).get(self._numeric_id)
+
     @property
-    def is_on(self) -> bool:
+    def available(self) -> bool:
+        """Return True if the zone is present in the coordinator data."""
+        return super().available and self._zone() is not None
+
+    @property
+    def is_on(self) -> bool | None:
         """Return true if motion is detected."""
-        if hasattr(self, "coordinator") and self.coordinator.data:
-            zone = self.coordinator.data.get(ALARM_ZONE, {}).get(self._numeric_id)
-            if zone is not None:
-                return (int(zone["status"], 16) & 1) != 0
-        return self._state == STATE_ON
+        zone = self._zone()
+        if zone is None:
+            return None
+        return (int(zone["status"], 16) & 1) != 0
 
     @property
     def device_class(self) -> BinarySensorDeviceClass | None:

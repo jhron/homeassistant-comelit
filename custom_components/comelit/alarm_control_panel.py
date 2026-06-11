@@ -30,7 +30,6 @@ async def async_setup_entry(
         VedoAlarm(
             area["id"],
             area["name"],
-            _state_from_armed_value(area["armed"]),
             coordinator.api,
             parent_id=entry.entry_id,
             coordinator=coordinator,
@@ -58,7 +57,6 @@ class VedoAlarm(CoordinatorEntity, ComelitDevice, AlarmControlPanelEntity):
         self,
         id: int,
         description: str,
-        state,
         vedo,
         *,
         parent_id: str | None = None,
@@ -78,16 +76,23 @@ class VedoAlarm(CoordinatorEntity, ComelitDevice, AlarmControlPanelEntity):
         )
         self._numeric_id = id
         self._vedo = vedo
-        self._state = state
+
+    def _area(self):
+        """Return the coordinator snapshot for this area, if present."""
+        return (self.coordinator.data or {}).get(ALARM_AREA, {}).get(self._numeric_id)
+
+    @property
+    def available(self) -> bool:
+        """Return True if the area is present in the coordinator data."""
+        return super().available and self._area() is not None
 
     @property
     def alarm_state(self):
         """Return the current alarm state."""
-        if hasattr(self, "coordinator") and self.coordinator.data:
-            area = self.coordinator.data.get(ALARM_AREA, {}).get(self._numeric_id)
-            if area is not None:
-                return _state_from_armed_value(area["armed"])
-        return self._state
+        area = self._area()
+        if area is None:
+            return None
+        return _state_from_armed_value(area["armed"])
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         """Disarm the alarm."""
