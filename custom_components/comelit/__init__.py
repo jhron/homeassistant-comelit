@@ -106,16 +106,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
             scan_interval=_get_scan_interval(entry),
         )
 
-        try:
-            await vedo.async_connect()
-        except ComelitAuthError as err:
-            raise ConfigEntryAuthFailed(
-                f"Comelit Vedo authentication failed for {entry.data[CONF_HOST]}"
-            ) from err
-        except ComelitConnectionError as err:
-            raise ConfigEntryNotReady(
-                f"Unable to connect to Comelit Vedo at {entry.data[CONF_HOST]}"
-            ) from err
+        # async_connect only creates the aiohttp session; auth and connection
+        # errors surface during the coordinator's first refresh below.
+        await vedo.async_connect()
 
         vedo.entry_id = entry.entry_id
         coordinator = ComelitVedoCoordinator(

@@ -98,16 +98,26 @@ async def test_async_setup_entry_hub_raises_auth_failed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_setup_entry_vedo_raises_not_ready() -> None:
+async def test_async_setup_entry_vedo_propagates_auth_failure_from_first_refresh() -> None:
     hass = _mock_hass()
     entry = _mock_vedo_entry()
 
-    with patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls:
+    with (
+        patch("custom_components.comelit.ComelitVedo") as mock_vedo_cls,
+        patch("custom_components.comelit.ComelitVedoCoordinator") as mock_coordinator_cls,
+    ):
         mock_vedo = mock_vedo_cls.return_value
-        mock_vedo.async_connect = AsyncMock(side_effect=ComelitConnectionError("offline"))
+        mock_vedo.async_connect = AsyncMock()
+        mock_coordinator = mock_coordinator_cls.return_value
+        mock_coordinator.async_config_entry_first_refresh = AsyncMock(
+            side_effect=ConfigEntryAuthFailed("bad credentials")
+        )
+        mock_coordinator.async_disconnect = AsyncMock()
 
-        with pytest.raises(ConfigEntryNotReady):
+        with pytest.raises(ConfigEntryAuthFailed):
             await async_setup_entry(hass, entry)
+
+    mock_coordinator.async_disconnect.assert_awaited_once()
 
 
 @pytest.mark.asyncio

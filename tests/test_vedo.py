@@ -5,7 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.comelit.exception import ComelitAuthError, ComelitCommandError
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import UpdateFailed
+
+from custom_components.comelit.exception import (
+    ComelitAuthError,
+    ComelitCommandError,
+    ComelitConnectionError,
+)
 from custom_components.comelit.vedo import ComelitVedo
 from custom_components.comelit.vedo_coordinator import ComelitVedoCoordinator
 
@@ -136,6 +143,28 @@ async def test_vedo_coordinator_relogs_in_once_when_cookie_expired() -> None:
 
     coordinator.api.login.assert_awaited_once()
     assert data == snapshot
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_raises_auth_failed_when_relogin_fails() -> None:
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = False
+    coordinator.api.login = AsyncMock(side_effect=ComelitAuthError("bad credentials"))
+
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_raises_update_failed_on_connection_error() -> None:
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = True
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        side_effect=ComelitConnectionError("offline")
+    )
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
 
 
 def test_vedo_authenticated_reflects_session_cookie() -> None:
