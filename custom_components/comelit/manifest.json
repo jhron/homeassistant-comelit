@@ -6,9 +6,9 @@
 	],
 	"config_flow": true,
 	"dependencies": [],
-	"documentation": "https://github.com/gicamm/homeassistant-comelit/wiki",
+	"documentation": "https://github.com/jhron/homeassistant-comelit",
 	"iot_class": "local_polling",
-	"issue_tracker": "https://github.com/gicamm/homeassistant-comelit/issues",
+	"issue_tracker": "https://github.com/jhron/homeassistant-comelit/issues",
 	"quality_scale": "silver",
 	"requirements": [
 		"aiomqtt>=2.0.0",
