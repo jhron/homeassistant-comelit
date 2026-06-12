@@ -10,6 +10,7 @@ from homeassistant.data_entry_flow import AbortFlow
 from custom_components.comelit.config_flow import (
     CannotConnect,
     ComelitConfigFlow,
+    ComelitOptionsFlow,
     InvalidAuth,
     validate_vedo_connection,
 )
@@ -196,3 +197,14 @@ async def test_vedo_user_flow_preserves_input_after_error() -> None:
     assert defaults["host"] == "192.168.1.20"
     assert defaults["port"] == 8080
     assert defaults["password"] == "123456"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_offers_only_scan_interval() -> None:
+    entry = SimpleNamespace(options={}, data={"device_type": "vedo", "scan_interval": 30})
+    flow = ComelitOptionsFlow(entry)
+
+    result = await flow.async_step_init(None)
+
+    assert {str(key) for key in result["data_schema"].schema} == {"scan_interval"}
+    assert _schema_defaults(result)["scan_interval"] == 30

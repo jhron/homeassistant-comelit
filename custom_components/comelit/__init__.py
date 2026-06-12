@@ -21,7 +21,6 @@ from .const import (
     CONF_MQTT_PASSWORD,
     CONF_SERIAL,
     CONF_CLIENT,
-    CONF_ENABLE_CLIMATE_DEBUG,
     DEVICE_TYPE_HUB,
     DEVICE_TYPE_VEDO,
     PLATFORMS_HUB,
@@ -40,11 +39,6 @@ type ComelitConfigEntry = ConfigEntry[ComelitHub | ComelitVedoCoordinator]
 def _get_scan_interval(entry: ConfigEntry) -> int:
     """Return the effective scan interval for a config entry."""
     return entry.options.get(CONF_SCAN_INTERVAL, entry.data[CONF_SCAN_INTERVAL])
-
-
-def _get_enable_climate_debug(entry: ConfigEntry) -> bool:
-    """Return whether detailed climate debug logging is enabled."""
-    return entry.options.get(CONF_ENABLE_CLIMATE_DEBUG, False)
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> None:
@@ -71,7 +65,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ComelitConfigEntry) -> b
             hub_user=entry.data[CONF_USERNAME],
             hub_password=entry.data[CONF_PASSWORD],
             scan_interval=_get_scan_interval(entry),
-            enable_climate_debug=_get_enable_climate_debug(entry),
         )
 
         try:

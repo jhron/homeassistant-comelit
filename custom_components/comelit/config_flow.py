@@ -22,7 +22,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     DOMAIN,
     CONF_DEVICE_TYPE,
-    CONF_ENABLE_CLIMATE_DEBUG,
     CONF_MQTT_USER,
     CONF_MQTT_PASSWORD,
     CONF_SERIAL,
@@ -465,20 +464,12 @@ class ComelitOptionsFlow(OptionsFlow):
             CONF_SCAN_INTERVAL,
             self._config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
-        climate_debug_enabled = self._config_entry.options.get(
-            CONF_ENABLE_CLIMATE_DEBUG,
-            False,
-        )
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_SCAN_INTERVAL, default=current_scan_interval): int,
-                    vol.Optional(
-                        CONF_ENABLE_CLIMATE_DEBUG,
-                        default=climate_debug_enabled,
-                    ): bool,
                 }
             ),
         )

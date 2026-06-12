@@ -7,7 +7,6 @@ import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from custom_components.comelit import (
-    _get_enable_climate_debug,
     _get_scan_interval,
     async_reload_entry,
     async_setup_entry,
@@ -16,7 +15,6 @@ from custom_components.comelit.config_flow import ComelitConfigFlow
 from custom_components.comelit.const import (
     CONF_CLIENT,
     CONF_DEVICE_TYPE,
-    CONF_ENABLE_CLIMATE_DEBUG,
     CONF_MQTT_PASSWORD,
     CONF_MQTT_USER,
     CONF_SERIAL,
@@ -185,24 +183,11 @@ def test_get_scan_interval_prefers_options() -> None:
     assert _get_scan_interval(entry) == 5
 
 
-def test_get_enable_climate_debug_defaults_to_false() -> None:
-    entry = _mock_hub_entry()
-
-    assert _get_enable_climate_debug(entry) is False
-
-
-def test_get_enable_climate_debug_prefers_options() -> None:
-    entry = _mock_hub_entry()
-    entry.options = {CONF_ENABLE_CLIMATE_DEBUG: True}
-
-    assert _get_enable_climate_debug(entry) is True
-
-
 @pytest.mark.asyncio
 async def test_async_setup_entry_uses_scan_interval_from_options() -> None:
     hass = _mock_hass()
     entry = _mock_hub_entry()
-    entry.options = {"scan_interval": 5, CONF_ENABLE_CLIMATE_DEBUG: True}
+    entry.options = {"scan_interval": 5}
 
     with patch("custom_components.comelit.ComelitHub") as mock_hub_cls:
         mock_hub = mock_hub_cls.return_value
@@ -211,7 +196,6 @@ async def test_async_setup_entry_uses_scan_interval_from_options() -> None:
         assert await async_setup_entry(hass, entry) is True
 
     assert mock_hub_cls.call_args.kwargs["scan_interval"] == 5
-    assert mock_hub_cls.call_args.kwargs["enable_climate_debug"] is True
     entry.add_update_listener.assert_called_once()
     entry.async_on_unload.assert_called_once()
 

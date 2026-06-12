@@ -75,8 +75,7 @@
         "title": "Comelit Options",
         "description": "Adjust runtime settings for this integration.",
         "data": {
-          "scan_interval": "Scan Interval (seconds)",
-          "enable_climate_debug": "Enable detailed climate debug logging"
+          "scan_interval": "Scan Interval (seconds)"
         }
       }
     }

@@ -99,7 +99,6 @@ class ComelitHub:
         hub_user: str,
         hub_password: str,
         scan_interval: int,
-        enable_climate_debug: bool = False,
     ) -> None:
         """Initialize the hub."""
         self.hass = hass
@@ -112,7 +111,6 @@ class ComelitHub:
         self.hub_user = hub_user
         self.hub_password = hub_password
         self.scan_interval = scan_interval
-        self.enable_climate_debug = enable_climate_debug
 
         self.sequence_id = 1
         self.agent_id = 10
@@ -304,11 +302,6 @@ class ComelitHub:
             for entity in entity_map.values():
                 if hasattr(entity, "set_available"):
                     entity.set_available(available)
-
-    def _log_climate_debug(self, message: str, *args: Any) -> None:
-        """Log detailed climate debug information when enabled."""
-        if self.enable_climate_debug:
-            _LOGGER.info(message, *args)
 
     def _schedule_reconnect(self, reason: str) -> None:
         """Schedule a reconnect attempt after connection loss."""
@@ -887,7 +880,7 @@ class ComelitHub:
             _LOGGER.error("Unknown climate mode: %s", mode)
             return
 
-        self._log_climate_debug(
+        _LOGGER.debug(
             "Climate command for %s: mode=%s act_type=%s act_params=%s",
             entity_id,
             mode,
@@ -908,7 +901,7 @@ class ComelitHub:
         # act_type 4 controls the season (est_inv)
         act_params = [1] if is_winter else [0]
         
-        self._log_climate_debug(
+        _LOGGER.debug(
             "Climate command for %s: season=%s",
             entity_id,
             "winter" if is_winter else "summer",

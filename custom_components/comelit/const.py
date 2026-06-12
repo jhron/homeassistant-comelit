@@ -12,7 +12,6 @@ CONF_MQTT_USER = "mqtt_user"
 CONF_MQTT_PASSWORD = "mqtt_password"
 CONF_SERIAL = "serial"
 CONF_CLIENT = "client"
-CONF_ENABLE_CLIMATE_DEBUG = "enable_climate_debug"
 
 # Platforms
 PLATFORMS_HUB = ["sensor", "light", "cover", "scene", "switch", "climate"]

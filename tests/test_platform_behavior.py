@@ -140,7 +140,6 @@ async def test_cover_does_not_mutate_state_after_failed_open() -> None:
 @pytest.mark.asyncio
 async def test_climate_does_not_mutate_state_after_failed_hvac_mode() -> None:
     hub = MagicMock()
-    hub.enable_climate_debug = False
     hub.async_climate_set_mode = AsyncMock(side_effect=ComelitCommandError("offline"))
     hub.async_climate_set_season = AsyncMock()
     climate = ComelitClimate(
@@ -161,7 +160,6 @@ async def test_climate_does_not_mutate_state_after_failed_hvac_mode() -> None:
 @pytest.mark.asyncio
 async def test_climate_set_temperature_in_auto_raises_service_validation_error() -> None:
     hub = MagicMock()
-    hub.enable_climate_debug = False
     climate = ComelitClimate(
         "DOM#CL#1",
         "Living",
@@ -176,7 +174,6 @@ async def test_climate_set_temperature_in_auto_raises_service_validation_error()
 @pytest.mark.asyncio
 async def test_climate_set_temperature_when_off_raises_service_validation_error() -> None:
     hub = MagicMock()
-    hub.enable_climate_debug = False
     climate = ComelitClimate(
         "DOM#CL#1",
         "Living",

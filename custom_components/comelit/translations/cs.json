@@ -75,8 +75,7 @@
         "title": "Možnosti Comelit",
         "description": "Upravte běhová nastavení této integrace.",
         "data": {
-          "scan_interval": "Interval aktualizace (sekundy)",
-          "enable_climate_debug": "Povolit podrobné ladění klimatizace v logu"
+          "scan_interval": "Interval aktualizace (sekundy)"
         }
       }
     }

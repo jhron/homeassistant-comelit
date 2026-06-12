@@ -137,14 +137,14 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
 
     def update_state(self, state_dict: dict[str, Any]) -> None:
         """Update climate state from hub data."""
-        if self._hub.enable_climate_debug:
+        if _LOGGER.isEnabledFor(logging.DEBUG):
             changes = [
                 f"{key}={self._climate_data.get(key)}->{state_dict.get(key)}"
                 for key in sorted(set(self._climate_data) | set(state_dict))
                 if self._climate_data.get(key) != state_dict.get(key)
             ]
             if changes:
-                _LOGGER.info("Climate update for %s: %s", self.name, ", ".join(changes))
+                _LOGGER.debug("Climate update for %s: %s", self.name, ", ".join(changes))
         self._climate_data = state_dict
         self.async_write_ha_state()
 
@@ -154,9 +154,9 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
         if temperature is None:
             return
 
-        if self._hub.enable_climate_debug:
-            _LOGGER.info("Climate command from HA for %s: set_temperature=%s", self.name, temperature)
-            
+        _LOGGER.debug("Climate command from HA for %s: set_temperature=%s", self.name, temperature)
+
+
         auto_man = self._climate_data.get("auto_man", COMELIT_MODE_OFF_6)
         
         if auto_man == COMELIT_MODE_AUTO:
@@ -175,9 +175,9 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set the HVAC mode."""
-        if self._hub.enable_climate_debug:
-            _LOGGER.info("Climate command from HA for %s: hvac_mode=%s", self.name, hvac_mode)
-        
+        _LOGGER.debug("Climate command from HA for %s: hvac_mode=%s", self.name, hvac_mode)
+
+
         if hvac_mode == HVACMode.OFF:
             await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_OFF_6)
             self._climate_data["auto_man"] = COMELIT_MODE_OFF_6
@@ -201,9 +201,9 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set the preset mode."""
-        if self._hub.enable_climate_debug:
-            _LOGGER.info("Climate command from HA for %s: preset_mode=%s", self.name, preset_mode)
-        
+        _LOGGER.debug("Climate command from HA for %s: preset_mode=%s", self.name, preset_mode)
+
+
         if preset_mode == PRESET_AUTO:
             await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_AUTO)
             self._climate_data["auto_man"] = COMELIT_MODE_AUTO

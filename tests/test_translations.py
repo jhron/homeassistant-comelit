@@ -47,8 +47,6 @@ def test_translations_cover_config_flow_and_exceptions(language: str) -> None:
     assert {"already_configured", "reconfigure_successful", "wrong_device"} <= set(
         data["config"]["abort"]
     )
-    assert {"scan_interval", "enable_climate_debug"} <= set(
-        data["options"]["step"]["init"]["data"]
-    )
+    assert set(data["options"]["step"]["init"]["data"]) == {"scan_interval"}
     assert {"cannot_authenticate", "update_failed"} <= set(data["exceptions"])
     assert "{error}" in data["exceptions"]["update_failed"]["message"]
