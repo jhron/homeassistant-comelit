@@ -158,7 +158,12 @@ class ComelitVedo:
                 response.raise_for_status()
                 text = await response.text(encoding="iso-8859-1")
                 if parse_json:
-                    return json.loads(text)
+                    payload = json.loads(text)
+                    # The panel answers expired sessions with HTTP 200 and
+                    # "logged": 0 while filling fields with "Not logged".
+                    if isinstance(payload, dict) and payload.get("logged") == 0:
+                        raise ComelitAuthError("Vedo session is not logged in")
+                    return payload
                 return text
         except aiohttp.ClientError as err:
             _LOGGER.error("GET request failed: %s", err)
@@ -179,18 +184,17 @@ class ComelitVedo:
         zones: dict[int, dict[str, Any]] = {}
         description = zone_desc.get("description", [])
         zone_statuses = zone_status.get("status", "").split(",")
-        in_area = zone_desc.get("in_area", [])
 
-        if len(in_area) == len(zone_statuses):
-            for i, value in enumerate(in_area):
-                if value == "Not logged":
-                    raise ComelitAuthError("Vedo cookie expired")
-                if value != 0:
-                    zones[i] = {
-                        "id": i,
-                        "name": description[i] if i < len(description) else f"Zone {i}",
-                        "status": zone_statuses[i] if i < len(zone_statuses) else "0",
-                    }
+        # Only slots with a description are configured zones; panels keep
+        # unused padding slots with empty descriptions (and non-zero in_area).
+        for i, name in enumerate(description):
+            if not name.strip():
+                continue
+            zones[i] = {
+                "id": i,
+                "name": name,
+                "status": zone_statuses[i] if i < len(zone_statuses) else "0000",
+            }
 
         areas: dict[int, dict[str, Any]] = {}
         descs = areas_desc.get("description", [])

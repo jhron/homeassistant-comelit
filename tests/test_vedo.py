@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -214,3 +215,127 @@ def test_vedo_authenticated_reflects_session_cookie() -> None:
     vedo._uid = "uid=abc"
 
     assert vedo.authenticated is True
+
+
+class _FakeResponse:
+    def __init__(self, payload) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        pass
+
+    async def text(self, encoding=None) -> str:
+        return json.dumps(self._payload)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_async_get_raises_auth_error_when_panel_reports_not_logged() -> None:
+    # Real Vedo panels answer expired sessions with HTTP 200 and "logged": 0.
+    vedo = _make_vedo()
+    vedo._uid = "uid=abc"
+    vedo._session = MagicMock()
+    vedo._session.get = MagicMock(
+        return_value=_FakeResponse(
+            {
+                "logged": 0,
+                "rt_stat": 80,
+                "present": "Not logged",
+                "in_area": ["Not logged"],
+                "description": ["Not logged"],
+            }
+        )
+    )
+
+    with pytest.raises(ComelitAuthError):
+        await vedo._async_get("user/zone_desc.json")
+
+
+def _vedo_responses(zone_desc: dict, zone_stat: dict) -> dict[str, dict]:
+    return {
+        "user/zone_desc.json": zone_desc,
+        "user/zone_stat.json": zone_stat,
+        "user/area_desc.json": {"description": ["Area 1"], "p1_pres": [0], "p2_pres": [0]},
+        "user/area_stat.json": {
+            "armed": [0],
+            "ready": [0],
+            "alarm": [0],
+            "alarm_memory": [0],
+            "sabotage": [0],
+            "anomaly": [0],
+            "in_time": [0],
+            "out_time": [0],
+        },
+    }
+
+
+def _patch_responses(vedo: ComelitVedo, responses: dict[str, dict]) -> None:
+    async def fake_get(path: str, parse_json: bool = True):
+        return responses[path]
+
+    vedo._async_get = fake_get
+
+
+@pytest.mark.asyncio
+async def test_zones_created_only_for_slots_with_description() -> None:
+    # Real panels mark unconfigured padding slots with empty descriptions while
+    # in_area stays non-zero, so the description is the only usable predicate.
+    vedo = _make_vedo()
+    _patch_responses(
+        vedo,
+        _vedo_responses(
+            {"description": ["Zona 24H", "", "VIALE", ""], "in_area": [2, 1, 5, 1]},
+            {"status": "0020,0200,0000,0200"},
+        ),
+    )
+
+    data = await vedo.get_all_areas_and_zones()
+
+    assert set(data["alarm_zone"]) == {0, 2}
+    assert data["alarm_zone"][2] == {"id": 2, "name": "VIALE", "status": "0000"}
+
+
+@pytest.mark.asyncio
+async def test_zone_parsing_survives_status_length_mismatch() -> None:
+    # Regression: a length mismatch between in_area and status used to skip the
+    # whole zone loop silently, leaving the integration without any zones.
+    vedo = _make_vedo()
+    _patch_responses(
+        vedo,
+        _vedo_responses(
+            {"description": ["VIALE", "PISCINA"], "in_area": [5]},
+            {"status": "0200"},
+        ),
+    )
+
+    data = await vedo.get_all_areas_and_zones()
+
+    assert set(data["alarm_zone"]) == {0, 1}
+    assert data["alarm_zone"][0]["status"] == "0200"
+    assert data["alarm_zone"][1]["status"] == "0000"
+
+
+@pytest.mark.asyncio
+async def test_get_all_areas_and_zones_propagates_auth_error_from_single_endpoint() -> None:
+    # A session invalidated mid-snapshot must surface as an auth error so the
+    # coordinator logs in again, instead of producing a partial snapshot.
+    vedo = _make_vedo()
+    responses = _vedo_responses(
+        {"description": ["VIALE"], "in_area": [5]},
+        {"status": "0200"},
+    )
+
+    async def fake_get(path: str, parse_json: bool = True):
+        if path == "user/zone_desc.json":
+            raise ComelitAuthError("Vedo session is not logged in")
+        return responses[path]
+
+    vedo._async_get = fake_get
+
+    with pytest.raises(ComelitAuthError):
+        await vedo.get_all_areas_and_zones()

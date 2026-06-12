@@ -76,7 +76,9 @@ async def test_binary_sensor_setup_adds_entities_from_coordinator_snapshot() -> 
             1: {"id": 1, "name": "Zone 1", "status": "0011"},
         }
     }
-    entry = SimpleNamespace(entry_id="entry-id", runtime_data=runtime)
+    entry = SimpleNamespace(
+        entry_id="entry-id", runtime_data=runtime, async_on_unload=MagicMock()
+    )
     add_entities = MagicMock()
 
     await async_setup_binary_sensor_entry(hass, entry, add_entities)
@@ -84,6 +86,35 @@ async def test_binary_sensor_setup_adds_entities_from_coordinator_snapshot() -> 
     entities = list(add_entities.call_args.args[0])
     assert len(entities) == 1
     assert entities[0].is_on is True
+
+
+@pytest.mark.asyncio
+async def test_binary_sensor_setup_adds_zones_appearing_in_later_refresh() -> None:
+    # Zones missing from the first snapshot must be added once a later refresh
+    # delivers them, without duplicating already created entities.
+    hass = MagicMock()
+    runtime = MagicMock()
+    runtime.data = {ALARM_ZONE: {}}
+    entry = SimpleNamespace(
+        entry_id="entry-id", runtime_data=runtime, async_on_unload=MagicMock()
+    )
+    add_entities = MagicMock()
+
+    await async_setup_binary_sensor_entry(hass, entry, add_entities)
+
+    assert add_entities.call_count == 0
+    listener = runtime.async_add_listener.call_args.args[0]
+
+    runtime.data = {ALARM_ZONE: {6: {"id": 6, "name": "VIALE", "status": "0200"}}}
+    listener()
+
+    entities = list(add_entities.call_args.args[0])
+    assert len(entities) == 1
+    assert entities[0].unique_id == "comelit_vedo_6"
+
+    listener()
+
+    assert add_entities.call_count == 1
 
 
 @pytest.mark.asyncio

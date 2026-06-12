@@ -22,16 +22,26 @@ async def async_setup_entry(
 ) -> None:
     """Set up Comelit Vedo binary sensors."""
     coordinator = entry.runtime_data
-    zones = (coordinator.data or {}).get(ALARM_ZONE, {})
-    async_add_entities(
-        VedoSensor(
-            zone["id"],
-            zone["name"],
-            parent_id=entry.entry_id,
-            coordinator=coordinator,
-        )
-        for zone in zones.values()
-    )
+    known_zones: set[int] = set()
+
+    def _async_add_new_zones() -> None:
+        zones = (coordinator.data or {}).get(ALARM_ZONE, {})
+        new_sensors = [
+            VedoSensor(
+                zone["id"],
+                zone["name"],
+                parent_id=entry.entry_id,
+                coordinator=coordinator,
+            )
+            for zone_id, zone in zones.items()
+            if zone_id not in known_zones
+        ]
+        if new_sensors:
+            known_zones.update(zones)
+            async_add_entities(new_sensors)
+
+    _async_add_new_zones()
+    entry.async_on_unload(coordinator.async_add_listener(_async_add_new_zones))
     _LOGGER.debug("Comelit Vedo Binary Sensor Integration started")
 
 
