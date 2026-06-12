@@ -112,20 +112,36 @@ async def validate_hub_connection(hass: HomeAssistant, data: dict[str, Any]) -> 
 
 async def validate_vedo_connection(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate Vedo connection."""
+    import json
+
     import aiohttp
 
-    url = f"http://{data[CONF_HOST]}:{data[CONF_PORT]}/login.cgi"
+    base = f"http://{data[CONF_HOST]}:{data[CONF_PORT]}"
+    timeout = aiohttp.ClientTimeout(total=10)
 
     try:
         session = async_get_clientsession(hass)
         async with session.post(
-            url,
+            f"{base}/login.cgi",
             data={"code": data[CONF_PASSWORD]},
-            timeout=aiohttp.ClientTimeout(total=10),
+            timeout=timeout,
         ) as response:
             if response.status != 200:
                 raise CannotConnect("Invalid response from Vedo")
-            if "set-cookie" not in response.headers:
+            uid = response.headers.get("set-cookie")
+            if not uid:
+                raise InvalidAuth("Invalid password")
+        # The panel sets a cookie even for a wrong code; only an authorized
+        # request reveals whether the login actually succeeded.
+        async with session.get(
+            f"{base}/user/area_desc.json",
+            headers={"Cookie": uid, "X-Requested-With": "XMLHttpRequest"},
+            timeout=timeout,
+        ) as probe:
+            if probe.status != 200:
+                raise CannotConnect("Invalid response from Vedo")
+            payload = json.loads(await probe.text(encoding="iso-8859-1"))
+            if payload.get("logged") == 0:
                 raise InvalidAuth("Invalid password")
     except aiohttp.ClientError as err:
         _LOGGER.error("Failed to connect to Vedo: %s", err)

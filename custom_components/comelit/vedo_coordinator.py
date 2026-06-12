@@ -18,6 +18,9 @@ _LOGGER = logging.getLogger(__name__)
 ALARM_ZONE = "alarm_zone"
 ALARM_AREA = "alarm_area"
 
+# Consecutive update cycles lost to auth errors before starting reauth.
+MAX_AUTH_FAILURES = 3
+
 
 class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]):
     """Coordinator for Comelit Vedo HTTP polling."""
@@ -31,6 +34,7 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
     ) -> None:
         """Initialize the coordinator."""
         self.api = api
+        self._auth_failures = 0
         super().__init__(
             hass=hass,
             logger=_LOGGER,
@@ -46,7 +50,7 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
                 try:
                     if not self.api.authenticated:
                         await self.api.login()
-                    return await self.api.get_all_areas_and_zones()
+                    data = await self.api.get_all_areas_and_zones()
                 except ComelitAuthError:
                     # Session cookie expired - log in again and retry once.
                     if attempt == 2:
@@ -57,10 +61,23 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
                     # before failing the update.
                     if attempt == 2:
                         raise
+                else:
+                    self._auth_failures = 0
+                    return data
         except ComelitAuthError as err:
-            raise ConfigEntryAuthFailed(
+            # The panel under load reports "logged": 0 even for valid
+            # sessions, so only repeated consecutive failures mean the
+            # credentials are actually wrong.
+            self._auth_failures += 1
+            if self._auth_failures >= MAX_AUTH_FAILURES:
+                raise ConfigEntryAuthFailed(
+                    translation_domain=DOMAIN,
+                    translation_key="cannot_authenticate",
+                ) from err
+            raise UpdateFailed(
                 translation_domain=DOMAIN,
-                translation_key="cannot_authenticate",
+                translation_key="update_failed",
+                translation_placeholders={"error": repr(err)},
             ) from err
         except ComelitConnectionError as err:
             raise UpdateFailed(

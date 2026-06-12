@@ -16,15 +16,25 @@ from custom_components.comelit.config_flow import (
 )
 
 
+def _mock_vedo_session(probe_payload: str) -> MagicMock:
+    login_response = AsyncMock()
+    login_response.status = 200
+    login_response.headers = {"set-cookie": "uid=abc"}
+    login_response.__aenter__.return_value = login_response
+    probe_response = AsyncMock()
+    probe_response.status = 200
+    probe_response.text = AsyncMock(return_value=probe_payload)
+    probe_response.__aenter__.return_value = probe_response
+    session = MagicMock()
+    session.post.return_value = login_response
+    session.get.return_value = probe_response
+    return session
+
+
 @pytest.mark.asyncio
 async def test_validate_vedo_connection_uses_ha_client_session() -> None:
     hass = MagicMock()
-    response = AsyncMock()
-    response.status = 200
-    response.headers = {"set-cookie": "UID=abc"}
-    response.__aenter__.return_value = response
-    session = MagicMock()
-    session.post.return_value = response
+    session = _mock_vedo_session('{"logged": 1, "description": []}')
 
     with patch(
         "custom_components.comelit.config_flow.async_get_clientsession",
@@ -37,6 +47,24 @@ async def test_validate_vedo_connection_uses_ha_client_session() -> None:
 
     get_session.assert_called_once_with(hass)
     assert result == {"title": "Comelit Vedo (127.0.0.1)"}
+
+
+@pytest.mark.asyncio
+async def test_validate_vedo_connection_rejects_unauthorized_cookie() -> None:
+    # The panel sets a cookie even for a wrong code; validation must probe an
+    # authorized endpoint instead of trusting the cookie's presence.
+    hass = MagicMock()
+    session = _mock_vedo_session('{"logged": 0, "description": ["Not logged"]}')
+
+    with patch(
+        "custom_components.comelit.config_flow.async_get_clientsession",
+        return_value=session,
+    ):
+        with pytest.raises(InvalidAuth):
+            await validate_vedo_connection(
+                hass,
+                {"host": "127.0.0.1", "port": 80, "password": "999999"},
+            )
 
 
 @pytest.mark.asyncio

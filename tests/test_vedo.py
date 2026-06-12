@@ -149,12 +149,38 @@ async def test_vedo_coordinator_relogs_in_once_when_cookie_expired() -> None:
 
 
 @pytest.mark.asyncio
-async def test_vedo_coordinator_raises_auth_failed_when_relogin_fails() -> None:
+async def test_vedo_coordinator_escalates_to_reauth_only_after_repeated_auth_failures() -> None:
+    # The panel under load can report "logged": 0 even for a valid session, so
+    # a couple of failed cycles must not pop the reauth dialog.
     coordinator = _make_coordinator()
     coordinator.api.authenticated = False
-    coordinator.api.login = AsyncMock(side_effect=ComelitAuthError("bad credentials"))
+    coordinator.api.login = AsyncMock(side_effect=ComelitAuthError("bad code"))
+
+    for _ in range(2):
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
 
     with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_resets_auth_failure_counter_on_success() -> None:
+    snapshot = {"alarm_zone": {}, "alarm_area": {}}
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = True
+    coordinator.api.login = AsyncMock()
+
+    coordinator.api.get_all_areas_and_zones = AsyncMock(side_effect=ComelitAuthError("x"))
+    for _ in range(2):
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+
+    coordinator.api.get_all_areas_and_zones = AsyncMock(return_value=snapshot)
+    assert await coordinator._async_update_data() == snapshot
+
+    coordinator.api.get_all_areas_and_zones = AsyncMock(side_effect=ComelitAuthError("x"))
+    with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
 
 
@@ -234,6 +260,34 @@ async def test_get_all_areas_and_zones_fetches_endpoints_sequentially() -> None:
     ]
     assert data["alarm_zone"][0]["name"] == "Zone 1"
     assert data["alarm_area"][0]["name"] == "Area 1"
+
+
+@pytest.mark.asyncio
+async def test_login_probes_session_and_raises_on_unauthorized_cookie() -> None:
+    # The panel sets a cookie even for a wrong code; only an authorized
+    # request reveals whether the login actually succeeded.
+    vedo = _make_vedo()
+    vedo._async_logout = AsyncMock()
+    vedo._async_login = AsyncMock(return_value="uid=abc")
+    vedo._async_get = AsyncMock(side_effect=ComelitAuthError("not logged"))
+
+    with pytest.raises(ComelitAuthError):
+        await vedo.login()
+
+    vedo._async_get.assert_awaited_once_with("user/area_desc.json")
+
+
+@pytest.mark.asyncio
+async def test_login_logs_out_stale_session_before_logging_in() -> None:
+    vedo = _make_vedo()
+    vedo._async_logout = AsyncMock()
+    vedo._async_login = AsyncMock(return_value="uid=new")
+    vedo._async_get = AsyncMock(return_value={"logged": 1})
+
+    await vedo.login()
+
+    vedo._async_logout.assert_awaited_once()
+    assert vedo._uid == "uid=new"
 
 
 def test_vedo_authenticated_reflects_session_cookie() -> None:
