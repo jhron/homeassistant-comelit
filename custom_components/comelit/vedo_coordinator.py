@@ -27,6 +27,9 @@ MAX_AUTH_FAILURES = 3
 # panel - sessions also expire 120 s after login regardless of activity).
 RETRY_DELAY = 1.0
 
+# Failed cycles bridged with the last snapshot before going unavailable.
+MAX_STALE_CYCLES = 5
+
 
 class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]):
     """Coordinator for Comelit Vedo HTTP polling."""
@@ -41,6 +44,7 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
         """Initialize the coordinator."""
         self.api = api
         self._auth_failures = 0
+        self._failed_cycles = 0
         super().__init__(
             hass=hass,
             logger=_LOGGER,
@@ -72,6 +76,7 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
                     await asyncio.sleep(RETRY_DELAY)
                 else:
                     self._auth_failures = 0
+                    self._failed_cycles = 0
                     return data
         except ComelitAuthError as err:
             # The panel under load reports "logged": 0 even for valid
@@ -83,17 +88,26 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
                     translation_domain=DOMAIN,
                     translation_key="cannot_authenticate",
                 ) from err
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="update_failed",
-                translation_placeholders={"error": repr(err)},
-            ) from err
+            return self._stale_or_fail(err)
         except ComelitConnectionError as err:
-            raise UpdateFailed(
-                translation_domain=DOMAIN,
-                translation_key="update_failed",
-                translation_placeholders={"error": repr(err)},
-            ) from err
+            return self._stale_or_fail(err)
+
+    def _stale_or_fail(self, err: Exception) -> dict[str, Mapping[int, Any]]:
+        """Bridge brief panel hiccups with the last snapshot."""
+        self._failed_cycles += 1
+        if self.data and self._failed_cycles <= MAX_STALE_CYCLES:
+            _LOGGER.debug(
+                "Vedo update failed (%r), reusing last snapshot (%s/%s)",
+                err,
+                self._failed_cycles,
+                MAX_STALE_CYCLES,
+            )
+            return self.data
+        raise UpdateFailed(
+            translation_domain=DOMAIN,
+            translation_key="update_failed",
+            translation_placeholders={"error": repr(err)},
+        ) from err
 
     async def async_disconnect(self) -> None:
         """Disconnect the wrapped Vedo API."""

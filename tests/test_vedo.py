@@ -196,6 +196,44 @@ async def test_vedo_coordinator_resets_auth_failure_counter_on_success() -> None
 
 
 @pytest.mark.asyncio
+async def test_vedo_coordinator_bridges_brief_failures_with_last_snapshot() -> None:
+    # A single failed poll must not flip entities to unavailable - reuse the
+    # last snapshot for a few cycles before reporting the failure.
+    snapshot = {"alarm_zone": {}, "alarm_area": {}}
+    coordinator = _make_coordinator()
+    coordinator.data = snapshot
+    coordinator.api.authenticated = True
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        side_effect=ComelitConnectionError("offline")
+    )
+
+    with patch(
+        "custom_components.comelit.vedo_coordinator.asyncio.sleep", new=AsyncMock()
+    ):
+        assert await coordinator._async_update_data() is snapshot
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_goes_unavailable_after_persistent_failures() -> None:
+    snapshot = {"alarm_zone": {}, "alarm_area": {}}
+    coordinator = _make_coordinator()
+    coordinator.data = snapshot
+    coordinator.api.authenticated = True
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        side_effect=ComelitConnectionError("offline")
+    )
+
+    with patch(
+        "custom_components.comelit.vedo_coordinator.asyncio.sleep", new=AsyncMock()
+    ):
+        for _ in range(5):
+            assert await coordinator._async_update_data() is snapshot
+
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
 async def test_vedo_coordinator_raises_update_failed_on_connection_error() -> None:
     coordinator = _make_coordinator()
     coordinator.api.authenticated = True
