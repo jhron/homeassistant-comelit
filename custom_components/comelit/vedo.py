@@ -183,16 +183,19 @@ class ComelitVedo:
 
         zones: dict[int, dict[str, Any]] = {}
         description = zone_desc.get("description", [])
+        present = zone_desc.get("present", "")
         zone_statuses = zone_status.get("status", "").split(",")
 
-        # Only slots with a description are configured zones; panels keep
-        # unused padding slots with empty descriptions (and non-zero in_area).
-        for i, name in enumerate(description):
-            if not name.strip():
+        # The "present" flag marks zones actually enrolled in the central
+        # unit. Descriptions alone are unreliable: while the IP module syncs
+        # with the central it reports factory names for all 382 slots.
+        for i, flag in enumerate(present):
+            if flag != "1":
                 continue
+            name = description[i].strip() if i < len(description) else ""
             zones[i] = {
                 "id": i,
-                "name": name,
+                "name": name or f"Zone {i}",
                 "status": zone_statuses[i] if i < len(zone_statuses) else "0000",
             }
 

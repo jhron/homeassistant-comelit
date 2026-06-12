@@ -234,7 +234,7 @@ async def test_get_all_areas_and_zones_fetches_endpoints_sequentially() -> None:
     # under continuous polling, so at most one request may be in flight.
     vedo = _make_vedo()
     responses = {
-        "user/zone_desc.json": {"description": ["Zone 1"], "in_area": [1]},
+        "user/zone_desc.json": {"description": ["Zone 1"], "present": "1", "in_area": [1]},
         "user/zone_stat.json": {"status": "0000"},
         "user/area_desc.json": {"description": ["Area 1"], "p1_pres": [0], "p2_pres": [0]},
         "user/area_stat.json": {
@@ -368,33 +368,39 @@ def _patch_responses(vedo: ComelitVedo, responses: dict[str, dict]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_zones_created_only_for_slots_with_description() -> None:
-    # Real panels mark unconfigured padding slots with empty descriptions while
-    # in_area stays non-zero, so the description is the only usable predicate.
+async def test_zones_created_only_for_present_slots() -> None:
+    # The "present" flag marks zones enrolled in the central unit. While the
+    # IP module syncs with the central it reports factory names ("Zona radio
+    # 1") for all 382 slots, so descriptions alone created hundreds of
+    # nonexistent zones.
     vedo = _make_vedo()
     _patch_responses(
         vedo,
         _vedo_responses(
-            {"description": ["Zona 24H", "", "VIALE", ""], "in_area": [2, 1, 5, 1]},
-            {"status": "0020,0200,0000,0200"},
+            {
+                "description": ["Zona 24H", "PF. CUCINA", "Zona radio 1", "Zona radio 2"],
+                "present": "1100",
+                "in_area": [2, 2, 1, 1],
+            },
+            {"status": "0020,0200,0200,0200"},
         ),
     )
 
     data = await vedo.get_all_areas_and_zones()
 
-    assert set(data["alarm_zone"]) == {0, 2}
-    assert data["alarm_zone"][2] == {"id": 2, "name": "VIALE", "status": "0000"}
+    assert set(data["alarm_zone"]) == {0, 1}
+    assert data["alarm_zone"][1] == {"id": 1, "name": "PF. CUCINA", "status": "0200"}
 
 
 @pytest.mark.asyncio
-async def test_zone_parsing_survives_status_length_mismatch() -> None:
-    # Regression: a length mismatch between in_area and status used to skip the
-    # whole zone loop silently, leaving the integration without any zones.
+async def test_zone_parsing_survives_length_mismatches() -> None:
+    # Regression: a length mismatch between arrays used to skip the whole
+    # zone loop silently, leaving the integration without any zones.
     vedo = _make_vedo()
     _patch_responses(
         vedo,
         _vedo_responses(
-            {"description": ["VIALE", "PISCINA"], "in_area": [5]},
+            {"description": ["VIALE"], "present": "11", "in_area": [5]},
             {"status": "0200"},
         ),
     )
@@ -402,8 +408,8 @@ async def test_zone_parsing_survives_status_length_mismatch() -> None:
     data = await vedo.get_all_areas_and_zones()
 
     assert set(data["alarm_zone"]) == {0, 1}
-    assert data["alarm_zone"][0]["status"] == "0200"
-    assert data["alarm_zone"][1]["status"] == "0000"
+    assert data["alarm_zone"][0] == {"id": 0, "name": "VIALE", "status": "0200"}
+    assert data["alarm_zone"][1] == {"id": 1, "name": "Zone 1", "status": "0000"}
 
 
 @pytest.mark.asyncio
