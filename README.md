@@ -40,7 +40,6 @@ After the integration is added, Home Assistant exposes three different flows:
 
 - `Options`
   - Change runtime settings such as `scan_interval`
-  - Enable temporary detailed climate debug logging for troubleshooting
 - `Reconfigure`
   - Change connection settings such as host, port, serial, or MQTT client details
 - `Reauthenticate`
@@ -62,12 +61,18 @@ the same ID receive each other's responses — one instance then appears to upda
 responses triggered by the other instance's polling, and the two sessions invalidate each other's tokens. Use a unique
 `client` value per instance (for example a dev/test instance).
 
-Detailed climate debug logging is intended for temporary troubleshooting while confirming Comelit mode and season
-behavior. Disable it after collecting logs to avoid noisy Home Assistant logs.
+For troubleshooting, use the standard Home Assistant per-integration debug logging (Settings -> Devices & Services ->
+Comelit -> Enable debug logging); climate updates and commands are logged at debug level.
 
 Comelit Vedo panels do not reliably expose a stable serial number or MAC address through the HTTP API used by this
 integration. The config flow prevents duplicate entries by host address, while Vedo child devices are identified by the
 Home Assistant config entry ID so they remain attached to the same integration entry when the host is reconfigured.
+
+### Vedo zones
+
+Every zone configured in the Vedo panel (a zone with a non-empty description) is created as a binary sensor, including
+zones you may not care about. Disable the entities you do not want to monitor in
+`Settings -> Devices & Services -> Entities`. Unconfigured panel slots (empty description) are skipped entirely.
 
 ### Upgrade notes
 
