@@ -234,6 +234,57 @@ async def test_vedo_coordinator_goes_unavailable_after_persistent_failures() -> 
 
 
 @pytest.mark.asyncio
+async def test_vedo_coordinator_reuses_last_zones_when_panel_returns_empty_section() -> None:
+    # The panel periodically answers zone endpoints with valid JSON but empty
+    # content while it refreshes internally; the cycle succeeds, so without
+    # bridging every zone flaps to unavailable for that one cycle.
+    zones = {6: {"id": 6, "name": "VIALE", "status": "0200"}}
+    areas_old = {1: {"id": 1, "name": "Area 1", "armed": 0}}
+    areas_new = {1: {"id": 1, "name": "Area 1", "armed": 4}}
+    coordinator = _make_coordinator()
+    coordinator.data = {"alarm_zone": zones, "alarm_area": areas_old}
+    coordinator.api.authenticated = True
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        return_value={"alarm_zone": {}, "alarm_area": areas_new}
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data["alarm_zone"] == zones
+    assert data["alarm_area"] == areas_new
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_reuses_last_areas_when_panel_returns_empty_section() -> None:
+    zones_new = {6: {"id": 6, "name": "VIALE", "status": "0000"}}
+    areas = {1: {"id": 1, "name": "Area 1", "armed": 0}}
+    coordinator = _make_coordinator()
+    coordinator.data = {"alarm_zone": {}, "alarm_area": areas}
+    coordinator.api.authenticated = True
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        return_value={"alarm_zone": zones_new, "alarm_area": {}}
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data["alarm_zone"] == zones_new
+    assert data["alarm_area"] == areas
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_passes_empty_sections_through_on_cold_start() -> None:
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = True
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        return_value={"alarm_zone": {}, "alarm_area": {}}
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data == {"alarm_zone": {}, "alarm_area": {}}
+
+
+@pytest.mark.asyncio
 async def test_vedo_coordinator_raises_update_failed_on_connection_error() -> None:
     coordinator = _make_coordinator()
     coordinator.api.authenticated = True

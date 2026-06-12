@@ -77,7 +77,7 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
                 else:
                     self._auth_failures = 0
                     self._failed_cycles = 0
-                    return data
+                    return self._bridge_empty_sections(data)
         except ComelitAuthError as err:
             # The panel under load reports "logged": 0 even for valid
             # sessions, so only repeated consecutive failures mean the
@@ -91,6 +91,25 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
             return self._stale_or_fail(err)
         except ComelitConnectionError as err:
             return self._stale_or_fail(err)
+
+    def _bridge_empty_sections(
+        self, data: dict[str, Mapping[int, Any]]
+    ) -> dict[str, Mapping[int, Any]]:
+        """Reuse the last non-empty zone/area section.
+
+        The panel periodically answers with valid JSON but empty content
+        while it refreshes internally; without bridging, every entity of the
+        affected section flaps to unavailable for that one cycle.
+        """
+        previous = self.data or {}
+        for section in (ALARM_ZONE, ALARM_AREA):
+            if not data.get(section) and previous.get(section):
+                _LOGGER.debug(
+                    "Vedo returned an empty %s section, reusing last snapshot",
+                    section,
+                )
+                data[section] = previous[section]
+        return data
 
     def _stale_or_fail(self, err: Exception) -> dict[str, Mapping[int, Any]]:
         """Bridge brief panel hiccups with the last snapshot."""
