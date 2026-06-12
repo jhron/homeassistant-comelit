@@ -39,13 +39,17 @@ async def test_validate_vedo_connection_uses_ha_client_session() -> None:
     with patch(
         "custom_components.comelit.config_flow.async_get_clientsession",
         return_value=session,
-    ) as get_session:
+    ) as get_session, patch(
+        "custom_components.comelit.config_flow.asyncio.sleep", new=AsyncMock()
+    ) as sleep:
         result = await validate_vedo_connection(
             hass,
             {"host": "127.0.0.1", "port": 80, "password": "123456"},
         )
 
     get_session.assert_called_once_with(hass)
+    # A fresh session needs a settle delay before probing it.
+    sleep.assert_awaited_once()
     assert result == {"title": "Comelit Vedo (127.0.0.1)"}
 
 
@@ -59,6 +63,8 @@ async def test_validate_vedo_connection_rejects_unauthorized_cookie() -> None:
     with patch(
         "custom_components.comelit.config_flow.async_get_clientsession",
         return_value=session,
+    ), patch(
+        "custom_components.comelit.config_flow.asyncio.sleep", new=AsyncMock()
     ):
         with pytest.raises(InvalidAuth):
             await validate_vedo_connection(

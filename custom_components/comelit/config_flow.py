@@ -1,6 +1,7 @@
 """Config flow for Comelit integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Mapping
 
@@ -132,7 +133,9 @@ async def validate_vedo_connection(hass: HomeAssistant, data: dict[str, Any]) ->
             if not uid:
                 raise InvalidAuth("Invalid password")
         # The panel sets a cookie even for a wrong code; only an authorized
-        # request reveals whether the login actually succeeded.
+        # request reveals whether the login actually succeeded. Give the
+        # panel a moment to register the session before probing it.
+        await asyncio.sleep(1)
         async with session.get(
             f"{base}/user/area_desc.json",
             headers={"Cookie": uid, "X-Requested-With": "XMLHttpRequest"},

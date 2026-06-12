@@ -143,11 +143,7 @@ class ComelitVedo:
 
     async def login(self) -> None:
         """Log in and store the current Vedo session cookie."""
-        await self._async_logout()
         self._uid = await self._async_login()
-        # The panel sets a cookie even for a wrong code; only an authorized
-        # request reveals whether the login actually succeeded.
-        await self._async_get(VedoRequest.AREA_DESC)
 
     async def _async_get(self, path: str, parse_json: bool = True) -> Any:
         """GET request to Vedo."""
