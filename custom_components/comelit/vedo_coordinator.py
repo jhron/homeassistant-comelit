@@ -42,14 +42,21 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
     async def _async_update_data(self) -> dict[str, Mapping[int, Any]]:
         """Fetch complete Vedo data."""
         try:
-            try:
-                if not self.api.authenticated:
+            for attempt in (1, 2):
+                try:
+                    if not self.api.authenticated:
+                        await self.api.login()
+                    return await self.api.get_all_areas_and_zones()
+                except ComelitAuthError:
+                    # Session cookie expired - log in again and retry once.
+                    if attempt == 2:
+                        raise
                     await self.api.login()
-                return await self.api.get_all_areas_and_zones()
-            except ComelitAuthError:
-                # Session cookie expired - log in again and retry once.
-                await self.api.login()
-                return await self.api.get_all_areas_and_zones()
+                except ComelitConnectionError:
+                    # The panel's web server is slow under load - retry once
+                    # before failing the update.
+                    if attempt == 2:
+                        raise
         except ComelitAuthError as err:
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN,

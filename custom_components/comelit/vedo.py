@@ -17,7 +17,7 @@ from .vedo_coordinator import ALARM_AREA, ALARM_ZONE
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 10
+DEFAULT_TIMEOUT = 15
 ARM_DISARM_ATTEMPTS = 5
 
 
@@ -165,18 +165,18 @@ class ComelitVedo:
                         raise ComelitAuthError("Vedo session is not logged in")
                     return payload
                 return text
-        except aiohttp.ClientError as err:
-            _LOGGER.error("GET request failed: %s", err)
-            raise
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.debug("GET request failed: %r", err)
+            raise ComelitConnectionError(f"Vedo request {path} failed: {err!r}") from err
 
     async def get_all_areas_and_zones(self) -> dict[str, dict[int, dict[str, Any]]]:
         """Fetch all Vedo areas and zones as a single snapshot."""
-        zone_desc, zone_status, areas_desc, areas_stat = await asyncio.gather(
-            self._async_get(VedoRequest.ZONE_DESC),
-            self._async_get(VedoRequest.ZONE_STAT),
-            self._async_get(VedoRequest.AREA_DESC),
-            self._async_get(VedoRequest.AREA_STAT),
-        )
+        # Fetch sequentially: the panel's embedded web server cannot keep up
+        # with concurrent requests under continuous polling.
+        zone_desc = await self._async_get(VedoRequest.ZONE_DESC)
+        zone_status = await self._async_get(VedoRequest.ZONE_STAT)
+        areas_desc = await self._async_get(VedoRequest.AREA_DESC)
+        areas_stat = await self._async_get(VedoRequest.AREA_STAT)
 
         if not all([zone_desc, zone_status, areas_desc, areas_stat]):
             raise ComelitConnectionError("Failed to get Vedo data")

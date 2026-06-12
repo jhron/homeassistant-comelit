@@ -76,6 +76,7 @@ async def test_vedo_async_connect_uses_ha_created_client_session() -> None:
 
     create_session.assert_called_once()
     assert create_session.call_args.args == (vedo.hass,)
+    assert create_session.call_args.kwargs["timeout"].total == 15
     assert vedo._session is session
 
 
@@ -170,7 +171,27 @@ async def test_vedo_coordinator_raises_update_failed_on_connection_error() -> No
 
 
 @pytest.mark.asyncio
-async def test_get_all_areas_and_zones_fetches_endpoints_concurrently() -> None:
+async def test_vedo_coordinator_retries_once_on_transient_connection_error() -> None:
+    # A single slow poll on the panel must not flip entities to unavailable
+    # or log an update failure - one retry absorbs the transient timeout.
+    snapshot = {"alarm_zone": {}, "alarm_area": {}}
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = True
+    coordinator.api.login = AsyncMock()
+    coordinator.api.get_all_areas_and_zones = AsyncMock(
+        side_effect=[ComelitConnectionError("timeout"), snapshot]
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert data == snapshot
+    coordinator.api.login.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_all_areas_and_zones_fetches_endpoints_sequentially() -> None:
+    # The panel's embedded web server cannot keep up with concurrent requests
+    # under continuous polling, so at most one request may be in flight.
     vedo = _make_vedo()
     responses = {
         "user/zone_desc.json": {"description": ["Zone 1"], "in_area": [1]},
@@ -189,11 +210,13 @@ async def test_get_all_areas_and_zones_fetches_endpoints_concurrently() -> None:
     }
     in_flight = 0
     max_in_flight = 0
+    calls: list[str] = []
 
     async def fake_get(path: str, parse_json: bool = True):
         nonlocal in_flight, max_in_flight
         in_flight += 1
         max_in_flight = max(max_in_flight, in_flight)
+        calls.append(path)
         await asyncio.sleep(0)
         in_flight -= 1
         return responses[path]
@@ -202,7 +225,13 @@ async def test_get_all_areas_and_zones_fetches_endpoints_concurrently() -> None:
 
     data = await vedo.get_all_areas_and_zones()
 
-    assert max_in_flight == 4
+    assert max_in_flight == 1
+    assert calls == [
+        "user/zone_desc.json",
+        "user/zone_stat.json",
+        "user/area_desc.json",
+        "user/area_stat.json",
+    ]
     assert data["alarm_zone"][0]["name"] == "Zone 1"
     assert data["alarm_area"][0]["name"] == "Area 1"
 
@@ -318,6 +347,27 @@ async def test_zone_parsing_survives_status_length_mismatch() -> None:
     assert set(data["alarm_zone"]) == {0, 1}
     assert data["alarm_zone"][0]["status"] == "0200"
     assert data["alarm_zone"][1]["status"] == "0000"
+
+
+@pytest.mark.asyncio
+async def test_async_get_converts_timeout_to_connection_error() -> None:
+    # aiohttp raises asyncio.TimeoutError when ClientTimeout expires; it must
+    # surface as ComelitConnectionError so the coordinator can retry once.
+    vedo = _make_vedo()
+    vedo._uid = "uid=abc"
+    vedo._session = MagicMock()
+
+    class _TimeoutContext:
+        async def __aenter__(self):
+            raise asyncio.TimeoutError
+
+        async def __aexit__(self, *exc) -> bool:
+            return False
+
+    vedo._session.get = MagicMock(return_value=_TimeoutContext())
+
+    with pytest.raises(ComelitConnectionError):
+        await vedo._async_get("user/zone_stat.json")
 
 
 @pytest.mark.asyncio
