@@ -146,7 +146,7 @@ async def validate_vedo_connection(hass: HomeAssistant, data: dict[str, Any]) ->
             payload = json.loads(await probe.text(encoding="iso-8859-1"))
             if payload.get("logged") == 0:
                 raise InvalidAuth("Invalid password")
-    except aiohttp.ClientError as err:
+    except (aiohttp.ClientError, asyncio.TimeoutError) as err:
         _LOGGER.error("Failed to connect to Vedo: %s", err)
         raise CannotConnect from err
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -51,6 +52,25 @@ async def test_validate_vedo_connection_uses_ha_client_session() -> None:
     # A fresh session needs a settle delay before probing it.
     sleep.assert_awaited_once()
     assert result == {"title": "Comelit Vedo (127.0.0.1)"}
+
+
+@pytest.mark.asyncio
+async def test_validate_vedo_connection_maps_timeout_to_cannot_connect() -> None:
+    # A slow panel raises asyncio.TimeoutError, which must show as
+    # "cannot_connect" in the flow instead of "unknown".
+    hass = MagicMock()
+    session = MagicMock()
+    session.post.side_effect = asyncio.TimeoutError
+
+    with patch(
+        "custom_components.comelit.config_flow.async_get_clientsession",
+        return_value=session,
+    ):
+        with pytest.raises(CannotConnect):
+            await validate_vedo_connection(
+                hass,
+                {"host": "127.0.0.1", "port": 80, "password": "123456"},
+            )
 
 
 @pytest.mark.asyncio
