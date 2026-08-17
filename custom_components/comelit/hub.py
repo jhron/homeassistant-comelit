@@ -84,6 +84,20 @@ class HubClasses:
     OTHER = "DOM#LD"
 
 
+# Cooling output modules reported per climate zone: summer (E) and combined
+# winter/summer (IE) relays plus their analog variants. Heating-only zones report
+# "0" for all of them (verified on a real hub).
+COOLING_OUTPUT_FIELDS = ("num_moduloE", "num_moduloE_ana", "num_moduloIE", "num_moduloIE_ana")
+
+
+def _has_cooling_output(data: dict[str, Any]) -> bool:
+    """Return whether the zone has any cooling output; unknown layouts keep cooling."""
+    values = [str(data[field]).strip() for field in COOLING_OUTPUT_FIELDS if field in data]
+    if not values:
+        return True
+    return any(value not in ("", "0") for value in values)
+
+
 class ComelitHub:
     """Comelit Hub coordinator."""
 
@@ -645,6 +659,7 @@ class ComelitHub:
                 "auto_man": auto_man,
                 "powerst": powerst,
                 "is_winter_season": is_winter,
+                "supports_cooling": _has_cooling_output(data),
                 "measured_temperature": measured_temp,
                 "target_temperature": target_temp,
             }

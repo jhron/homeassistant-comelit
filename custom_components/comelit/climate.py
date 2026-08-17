@@ -52,7 +52,6 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
     _attr_min_temp = 5.0
     _attr_max_temp = 30.0
     _attr_target_temperature_step = 0.5
-    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
     _attr_preset_modes = [PRESET_MANUAL, PRESET_AUTO]
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
@@ -78,6 +77,15 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
         )
         self._hub = hub
         self._climate_data = state_dict
+        self._attr_hvac_modes = self._hvac_modes_for(state_dict)
+
+    @staticmethod
+    def _hvac_modes_for(state_dict: dict[str, Any]) -> list[HVACMode]:
+        """Offer COOL only when the hub reports a cooling output for the zone."""
+        modes = [HVACMode.OFF, HVACMode.HEAT]
+        if state_dict.get("supports_cooling", True):
+            modes.append(HVACMode.COOL)
+        return modes
 
     @property
     def hvac_mode(self) -> HVACMode:
@@ -146,6 +154,7 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
             if changes:
                 _LOGGER.debug("Climate update for %s: %s", self.name, ", ".join(changes))
         self._climate_data = state_dict
+        self._attr_hvac_modes = self._hvac_modes_for(state_dict)
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
@@ -188,6 +197,10 @@ class ComelitClimate(ComelitDevice, ClimateEntity):
             self._climate_data["auto_man"] = COMELIT_MODE_MANUAL
             self._climate_data["is_winter_season"] = True
         elif hvac_mode == HVACMode.COOL:
+            if not self._climate_data.get("supports_cooling", True):
+                raise ServiceValidationError(
+                    f"{self.name} has no cooling output; cooling is not supported for this zone."
+                )
             # Turn on in manual mode, set summer season
             await self._hub.async_climate_set_mode(self._id, COMELIT_MODE_MANUAL)
             await self._hub.async_climate_set_season(self._id, is_winter=False)

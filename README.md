@@ -64,6 +64,9 @@ responses triggered by the other instance's polling, and the two sessions invali
 For troubleshooting, use the standard Home Assistant per-integration debug logging (Settings -> Devices & Services ->
 Comelit -> Enable debug logging); climate updates and commands are logged at debug level.
 
+Climate zones expose Off/Heat/Cool. Zones for which the hub reports no cooling output module (heating-only zones)
+only offer Off and Heat, and a cool request for such a zone is rejected instead of being sent to the hub.
+
 Comelit Vedo panels do not reliably expose a stable serial number or MAC address through the HTTP API used by this
 integration. The config flow prevents duplicate entries by host address, while Vedo child devices are identified by the
 Home Assistant config entry ID so they remain attached to the same integration entry when the host is reconfigured.

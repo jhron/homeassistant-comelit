@@ -183,3 +183,46 @@ async def test_climate_set_temperature_when_off_raises_service_validation_error(
 
     with pytest.raises(ServiceValidationError, match="OFF"):
         await climate.async_set_temperature(temperature=22.0)
+
+
+def _climate(state: dict, hub=None) -> ComelitClimate:
+    return ComelitClimate("DOM#CL#1", "Bagno", state, hub or MagicMock())
+
+
+def test_climate_without_cooling_output_hides_cool_mode() -> None:
+    climate = _climate({"auto_man": COMELIT_MODE_OFF_6, "supports_cooling": False})
+
+    assert climate.hvac_modes == [HVACMode.OFF, HVACMode.HEAT]
+
+
+@pytest.mark.parametrize("state", [{"auto_man": 2, "supports_cooling": True}, {"auto_man": 2}])
+def test_climate_with_cooling_output_or_unknown_offers_cool_mode(state: dict) -> None:
+    climate = _climate(state)
+
+    assert climate.hvac_modes == [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
+
+
+def test_climate_update_state_refreshes_hvac_modes() -> None:
+    climate = _climate({"auto_man": 2, "supports_cooling": True})
+    climate.async_write_ha_state = MagicMock()
+
+    climate.update_state({"auto_man": 2, "supports_cooling": False})
+
+    assert climate.hvac_modes == [HVACMode.OFF, HVACMode.HEAT]
+
+
+@pytest.mark.asyncio
+async def test_climate_set_cool_without_cooling_output_raises_and_sends_nothing() -> None:
+    hub = MagicMock()
+    hub.async_climate_set_mode = AsyncMock()
+    hub.async_climate_set_season = AsyncMock()
+    climate = _climate({"auto_man": COMELIT_MODE_OFF_6, "is_winter_season": True, "supports_cooling": False}, hub)
+    climate.async_write_ha_state = MagicMock()
+
+    with pytest.raises(ServiceValidationError, match="cooling"):
+        await climate.async_set_hvac_mode(HVACMode.COOL)
+
+    hub.async_climate_set_mode.assert_not_awaited()
+    hub.async_climate_set_season.assert_not_awaited()
+    assert climate.hvac_mode is HVACMode.OFF
+    climate.async_write_ha_state.assert_not_called()

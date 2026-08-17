@@ -252,3 +252,26 @@ async def test_hub_climate_set_mode_ignores_unknown_mode() -> None:
     await hub.async_climate_set_mode("DOM#CL#73.1", 9)
 
     hub._async_publish.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outputs", "supports_cooling"),
+    [
+        ({"num_moduloI": "2", "num_uscitaI": "6", "num_moduloE": "0", "num_moduloE_ana": "0", "num_moduloIE": "0", "num_moduloIE_ana": "0"}, False),
+        ({"num_moduloI": "2", "num_uscitaI": "3", "num_moduloE": "2", "num_uscitaE": "3", "num_moduloIE": "0"}, True),
+        ({"num_moduloE": "0", "num_moduloIE": "5"}, True),  # combined heat/cool output
+        ({}, True),  # firmware without output fields: keep offering cool
+    ],
+)
+async def test_hub_climate_state_reports_cooling_support(
+    outputs: dict[str, str], supports_cooling: bool
+) -> None:
+    """Zones without any cooling (E / IE) output module do not support cooling."""
+    hub = _make_hub()
+    hub.climate_add_entities = MagicMock()
+    data = {"descrizione": "Bagno", "temperatura": "239", "soglia_attiva": "220", "auto_man": "6", **outputs}
+
+    await hub._async_update_climate("DOM#CL#75.1", data)
+
+    assert hub.climates["DOM#CL#75.1"]._climate_data["supports_cooling"] is supports_cooling
