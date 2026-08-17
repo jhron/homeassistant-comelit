@@ -70,9 +70,13 @@ Home Assistant config entry ID so they remain attached to the same integration e
 
 ### Vedo zones
 
-Every zone configured in the Vedo panel (a zone with a non-empty description) is created as a binary sensor, including
-zones you may not care about. Disable the entities you do not want to monitor in
-`Settings -> Devices & Services -> Entities`. Unconfigured panel slots (empty description) are skipped entirely.
+Every zone enrolled in the Vedo central unit (a zone the panel reports with the `present` flag set) is created as a
+binary sensor, including zones you may not care about. Disable the entities you do not want to monitor in
+`Settings -> Devices & Services -> Entities`. Panel slots that are not present are skipped entirely.
+
+Zone descriptions are not used to decide which zones exist: while the Vedo IP module is still syncing with the central
+unit it reports factory names (such as `Zona radio 1`) for all slots, which would otherwise create hundreds of
+nonexistent zone entities. A present zone without a description is named `Zone <n>`, where `<n>` is its slot index.
 
 ### Upgrade notes
 
