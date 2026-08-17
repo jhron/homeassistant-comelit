@@ -24,3 +24,4 @@ venv/
 .devcontainer/config/home-assistant_v2.db-shm
 .devcontainer/config/home-assistant_v2.db-wal
 .devcontainer/config/tts/
+.env
