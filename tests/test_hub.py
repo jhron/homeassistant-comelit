@@ -208,3 +208,47 @@ async def test_hub_records_unsolicited_payload_when_debug_enabled() -> None:
     await hub._async_dispatch(payload)
 
     assert hub._last_unsolicited_payload == payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "act_type", "act_params"),
+    [
+        (1, 13, [1]),  # AUTO
+        (2, 13, [2]),  # MANUAL
+        (5, 0, [0]),  # OFF (auto)
+        (6, 0, [0]),  # OFF (manual)
+    ],
+)
+async def test_hub_climate_set_mode_publishes_hsrv_action(
+    mode: int, act_type: int, act_params: list[int]
+) -> None:
+    """Mode switching uses HSrv act_type=13 with the target auto_man value.
+
+    Verified against a real hub: act_type=13 also turns an OFF zone back on,
+    while the previously used act_type=1/3 was silently ignored.
+    """
+    hub = _make_hub()
+    hub._async_publish = AsyncMock()
+
+    await hub.async_climate_set_mode("DOM#CL#73.1", mode)
+
+    hub._async_publish.assert_awaited_once_with(
+        {
+            "req_type": 1,
+            "req_sub_type": 3,
+            "obj_id": "DOM#CL#73.1",
+            "act_type": act_type,
+            "act_params": act_params,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_hub_climate_set_mode_ignores_unknown_mode() -> None:
+    hub = _make_hub()
+    hub._async_publish = AsyncMock()
+
+    await hub.async_climate_set_mode("DOM#CL#73.1", 9)
+
+    hub._async_publish.assert_not_awaited()

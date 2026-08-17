@@ -858,24 +858,18 @@ class ComelitHub:
 
     async def async_climate_set_mode(self, entity_id: str, mode: int) -> None:
         """Set climate mode (1=auto, 2=manual, 5/6=off)."""
-        # Based on working commands:
-        # - act_type=0, act_params=[0] = OFF (works)
-        # - act_type=2, act_params=[temp] = set temperature (works)
-        # 
-        # Theory for mode switching:
-        # - act_type=0, act_params=[1] = turn ON (maybe just enables, not mode switch)
-        # - act_type=1 = switch to MANUAL mode
-        # - act_type=3 = switch to AUTO mode
-        
+        # HSrv action types:
+        # - act_type=0,  act_params=[0]    = OFF
+        # - act_type=2,  act_params=[temp] = set temperature
+        # - act_type=13, act_params=[mode] = switch clima mode, where mode is the
+        #   target auto_man value (1=auto, 2=manual, 5=off_auto, 6=off_manual)
+
         if mode in (5, 6):  # OFF
             act_type = 0
             act_params = [0]
-        elif mode == 2:  # MANUAL - try act_type=1
-            act_type = 1
-            act_params = [1]
-        elif mode == 1:  # AUTO - try act_type=3
-            act_type = 3
-            act_params = [1]
+        elif mode in (1, 2):  # AUTO / MANUAL
+            act_type = 13
+            act_params = [mode]
         else:
             _LOGGER.error("Unknown climate mode: %s", mode)
             return
