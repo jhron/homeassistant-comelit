@@ -16,7 +16,16 @@ from custom_components.comelit.exception import (
     ComelitConnectionError,
 )
 from custom_components.comelit.vedo import ComelitVedo
+from custom_components.comelit import vedo_coordinator
 from custom_components.comelit.vedo_coordinator import ComelitVedoCoordinator
+
+
+@pytest.fixture(autouse=True)
+def _clear_auth_outages():
+    """The auth outage clock is module state shared by all coordinators."""
+    vedo_coordinator._AUTH_FAILING_SINCE.clear()
+    yield
+    vedo_coordinator._AUTH_FAILING_SINCE.clear()
 
 
 def _make_vedo() -> ComelitVedo:
@@ -153,10 +162,19 @@ async def test_vedo_coordinator_relogs_in_once_when_cookie_expired() -> None:
     assert data == snapshot
 
 
+def _at(minutes: float):
+    """Patch the coordinator clock to a fixed monotonic time (in minutes)."""
+    return patch(
+        "custom_components.comelit.vedo_coordinator.time.monotonic",
+        return_value=minutes * 60,
+    )
+
+
 @pytest.mark.asyncio
-async def test_vedo_coordinator_escalates_to_reauth_only_after_repeated_auth_failures() -> None:
-    # The panel under load can report "logged": 0 even for a valid session, so
-    # a couple of failed cycles must not pop the reauth dialog.
+async def test_vedo_coordinator_does_not_reauth_within_grace_period() -> None:
+    # 2026-11-10 a panel refused valid sessions for ~90 s; the old "3 cycles"
+    # rule raised a reauth and HA stopped polling for two days. Any number of
+    # auth failures shorter than the grace period must stay a plain failure.
     coordinator = _make_coordinator()
     coordinator.api.authenticated = False
     coordinator.api.login = AsyncMock(side_effect=ComelitAuthError("bad code"))
@@ -164,16 +182,96 @@ async def test_vedo_coordinator_escalates_to_reauth_only_after_repeated_auth_fai
     with patch(
         "custom_components.comelit.vedo_coordinator.asyncio.sleep", new=AsyncMock()
     ):
-        for _ in range(2):
-            with pytest.raises(UpdateFailed):
+        for minute in range(0, 30, 2):
+            with _at(minute), pytest.raises(UpdateFailed):
                 await coordinator._async_update_data()
 
-        with pytest.raises(ConfigEntryAuthFailed):
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_escalates_to_reauth_after_grace_period() -> None:
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = False
+    coordinator.api.login = AsyncMock(side_effect=ComelitAuthError("bad code"))
+
+    with patch(
+        "custom_components.comelit.vedo_coordinator.asyncio.sleep", new=AsyncMock()
+    ):
+        for minute in (0, 10, 20):
+            with _at(minute), pytest.raises(UpdateFailed):
+                await coordinator._async_update_data()
+        with _at(30), pytest.raises(ConfigEntryAuthFailed):
             await coordinator._async_update_data()
 
 
 @pytest.mark.asyncio
-async def test_vedo_coordinator_resets_auth_failure_counter_on_success() -> None:
+async def test_vedo_coordinator_grace_survives_setup_retries() -> None:
+    # A failing first refresh -> ConfigEntryNotReady -> HA builds a new
+    # coordinator on every setup retry; a wrong PIN must still reach reauth.
+    login = AsyncMock(side_effect=ComelitAuthError("bad code"))
+    with patch(
+        "custom_components.comelit.vedo_coordinator.asyncio.sleep", new=AsyncMock()
+    ):
+        for minute in (0, 10, 20):
+            coordinator = _make_coordinator()
+            coordinator.api.authenticated = False
+            coordinator.api.login = login
+            with _at(minute), pytest.raises(UpdateFailed):
+                await coordinator._async_update_data()
+        coordinator = _make_coordinator()
+        coordinator.api.authenticated = False
+        coordinator.api.login = login
+        with _at(31), pytest.raises(ConfigEntryAuthFailed):
+            await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_success_restarts_grace_period() -> None:
+    snapshot = {"alarm_zone": {}, "alarm_area": {}}
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = True
+    coordinator.api.login = AsyncMock()
+
+    with patch(
+        "custom_components.comelit.vedo_coordinator.asyncio.sleep", new=AsyncMock()
+    ):
+        coordinator.api.get_all_areas_and_zones = AsyncMock(side_effect=ComelitAuthError("x"))
+        with _at(0), pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+
+        coordinator.api.get_all_areas_and_zones = AsyncMock(return_value=snapshot)
+        with _at(25):
+            assert await coordinator._async_update_data() == snapshot
+
+        coordinator.api.get_all_areas_and_zones = AsyncMock(side_effect=ComelitAuthError("x"))
+        for minute in (40, 60):
+            with _at(minute), pytest.raises(UpdateFailed):
+                await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_logs_panel_answer_once_per_outage(caplog) -> None:
+    # Without debug logging nothing told what the panel answered on 2026-11-10;
+    # one WARNING at the start of an auth outage carries the panel's answer.
+    coordinator = _make_coordinator()
+    coordinator.api.authenticated = False
+    coordinator.api.login = AsyncMock(
+        side_effect=ComelitAuthError("Vedo login returned no session cookie (HTTP 200, body: 'busy')")
+    )
+
+    with patch(
+        "custom_components.comelit.vedo_coordinator.asyncio.sleep", new=AsyncMock()
+    ), caplog.at_level("WARNING", logger="custom_components.comelit.vedo_coordinator"):
+        for minute in (0, 1, 2):
+            with _at(minute), pytest.raises(UpdateFailed):
+                await coordinator._async_update_data()
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "busy" in warnings[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_vedo_coordinator_success_ends_auth_outage() -> None:
     snapshot = {"alarm_zone": {}, "alarm_area": {}}
     coordinator = _make_coordinator()
     coordinator.api.authenticated = True
@@ -409,6 +507,37 @@ class _FakeResponse:
         return False
 
 
+class _FakeLoginResponse:
+    def __init__(self, status: int, headers: dict, body: str) -> None:
+        self.status = status
+        self.headers = headers
+        self._body = body
+
+    async def text(self, encoding=None) -> str:
+        return self._body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_login_without_cookie_reports_the_panel_answer() -> None:
+    vedo = _make_vedo()
+    vedo._session = MagicMock()
+    vedo._session.post = MagicMock(
+        return_value=_FakeLoginResponse(200, {}, '{"logged": 0, "rt_stat": 4}')
+    )
+
+    with pytest.raises(ComelitAuthError) as err:
+        await vedo._async_login()
+
+    assert "HTTP 200" in str(err.value)
+    assert "rt_stat" in str(err.value)
+
+
 @pytest.mark.asyncio
 async def test_async_get_raises_auth_error_when_panel_reports_not_logged() -> None:
     # Real Vedo panels answer expired sessions with HTTP 200 and "logged": 0.
@@ -427,8 +556,11 @@ async def test_async_get_raises_auth_error_when_panel_reports_not_logged() -> No
         )
     )
 
-    with pytest.raises(ComelitAuthError):
+    with pytest.raises(ComelitAuthError) as err:
         await vedo._async_get("user/zone_desc.json")
+
+    assert "user/zone_desc.json" in str(err.value)
+    assert "rt_stat" in str(err.value)
 
 
 def _vedo_responses(zone_desc: dict, zone_stat: dict) -> dict[str, dict]:

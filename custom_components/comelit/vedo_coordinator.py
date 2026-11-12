@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+import time
 from typing import Any, Mapping
 
 from homeassistant.config_entries import ConfigEntry
@@ -19,8 +20,16 @@ _LOGGER = logging.getLogger(__name__)
 ALARM_ZONE = "alarm_zone"
 ALARM_AREA = "alarm_area"
 
-# Consecutive update cycles lost to auth errors before starting reauth.
-MAX_AUTH_FAILURES = 3
+# How long auth errors must persist before starting reauth. A reauth stops
+# polling until the user reconfigures the entry, so a panel that refuses valid
+# sessions for a while (2026-11-10: ~90 s with the correct PIN) must not trigger
+# it; wrong credentials still end in reauth after this time.
+AUTH_FAILURE_GRACE = 30 * 60  # seconds
+
+# Start of the current auth outage per config entry. Kept outside the
+# coordinator because a failing first refresh makes HA retry the setup with a
+# new coordinator each time; the clock must survive those retries.
+_AUTH_FAILING_SINCE: dict[str, float] = {}
 
 # The panel registers a fresh session asynchronously; a LAN request sent
 # right after login can outrun it and get "logged": 0 (verified on a real
@@ -43,7 +52,7 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
     ) -> None:
         """Initialize the coordinator."""
         self.api = api
-        self._auth_failures = 0
+        self._entry_id = entry.entry_id
         self._failed_cycles = 0
         super().__init__(
             hass=hass,
@@ -75,15 +84,28 @@ class ComelitVedoCoordinator(DataUpdateCoordinator[dict[str, Mapping[int, Any]]]
                         raise
                     await asyncio.sleep(RETRY_DELAY)
                 else:
-                    self._auth_failures = 0
+                    since = _AUTH_FAILING_SINCE.pop(self._entry_id, None)
+                    if since is not None:
+                        _LOGGER.warning(
+                            "Vedo accepts the session again after %.0f s of auth errors",
+                            time.monotonic() - since,
+                        )
                     self._failed_cycles = 0
                     return self._bridge_empty_sections(data)
         except ComelitAuthError as err:
             # The panel under load reports "logged": 0 even for valid
-            # sessions, so only repeated consecutive failures mean the
-            # credentials are actually wrong.
-            self._auth_failures += 1
-            if self._auth_failures >= MAX_AUTH_FAILURES:
+            # sessions, so only auth errors lasting the whole grace period
+            # mean the credentials are actually wrong.
+            now = time.monotonic()
+            since = _AUTH_FAILING_SINCE.get(self._entry_id)
+            if since is None:
+                _AUTH_FAILING_SINCE[self._entry_id] = now
+                _LOGGER.warning(
+                    "Vedo refused the session, reauth only if this persists %d min: %s",
+                    AUTH_FAILURE_GRACE // 60,
+                    err,
+                )
+            elif now - since >= AUTH_FAILURE_GRACE:
                 raise ConfigEntryAuthFailed(
                     translation_domain=DOMAIN,
                     translation_key="cannot_authenticate",

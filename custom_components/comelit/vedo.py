@@ -117,7 +117,10 @@ class ComelitVedo:
                     _LOGGER.debug("Logged in to Vedo")
                     return uid
 
-                raise ComelitAuthError("Invalid Vedo credentials")
+                body = (await response.text(encoding="iso-8859-1"))[:200]
+                raise ComelitAuthError(
+                    f"Vedo login returned no session cookie (HTTP {response.status}, body: {body!r})"
+                )
         except aiohttp.ClientError as err:
             raise ComelitConnectionError("Unable to reach Vedo panel") from err
 
@@ -162,7 +165,9 @@ class ComelitVedo:
                     # The panel answers expired sessions with HTTP 200 and
                     # "logged": 0 while filling fields with "Not logged".
                     if isinstance(payload, dict) and payload.get("logged") == 0:
-                        raise ComelitAuthError("Vedo session is not logged in")
+                        raise ComelitAuthError(
+                            f"Vedo session is not logged in ({path}): {text[:200]}"
+                        )
                     return payload
                 return text
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
